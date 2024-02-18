@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+
+  <name>Model Airplane Design Workbench</name>
+
+  <description>A tool to design model airplanes in FreeCAD</description>
+
+  <version>0.2</version>
+
+  <date>2024-02-18</date>
+
+  <maintainer email="jonbitzen@hotmail.com">jonbitzen</maintainer>
+
+  <license file="LICENSE">LGPL 2.1</license>
+
+  <url branch="main" type="repository">https://github.com/jonbitzen/ModelAirplaneDesignWorkbench</url>
+
+  <url type="bugtracker">https://github.com/jonbitzen/ModelAirplaneDesignWorkbench/issues</url>
+
+  <url type="documentation">https://github.com/jonbitzen/ModelAirplaneDesignWorkbench/wiki</url>
+
+  <icon>freecad/model_airplane_design/resources/icons8-airplane-64.png</icon>
+
+  <content>
+    <workbench>
+      <freecadmin>0.20.0</freecadmin>
+      <tag>centroid</tag>
+      <tag>center</tag>
+      <classname>ModelAirplaneDesignWorkbench</classname>
+      <subdirectory>./</subdirectory>
+    </workbench>
+  </content>
+
+</package>
+

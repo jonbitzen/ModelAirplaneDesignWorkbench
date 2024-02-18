@@ -1,0 +1,5 @@
+{
+    // See the README.md for information about populating these folders
+    "python.analysis.stubPath": "",
+    "python.analysis.extraPaths": []
+}
