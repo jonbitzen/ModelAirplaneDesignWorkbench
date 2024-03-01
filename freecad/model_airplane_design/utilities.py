@@ -24,6 +24,13 @@ class LighteningHoleBounds:
         self.upper_spline_pts: List[App.Vector] = []
         self.lower_spline_pts: List[App.Vector] = []
 
+        self.get_chamfer_corners()
+        self.upper_spline_pts, self.lower_spline_pts = self.get_spline_control_pts()
+
+        self.offset = 2
+
+        self.left_l_chamfer_pts = self.get_chamfer_line_pts(self.left_bnd_pts, self.offset)
+        self.right_l_chamfer_pts = self.get_chamfer_line_pts(self.right_bnd_pts, self.offset)
 
     def get_spline_control_pts(self, num_ctl_pts: int = 5) -> tuple[List[App.Vector], List[App.Vector]]:
         
@@ -48,10 +55,10 @@ class LighteningHoleBounds:
             pts = self.get_intersections(tmp_line)
             pts.sort(key=lambda pt: pt.z, reverse=True)
 
-            self.upper_spline_pts.append(pts[0])
-            self.lower_spline_pts.append(pts[1])
+            upper_spline_pts.append(pts[0])
+            lower_spline_pts.append(pts[1])
 
-        return (self.upper_spline_pts, self.lower_spline_pts)
+        return upper_spline_pts, lower_spline_pts
 
     # locate the points that will be used to form the chamfer coordinate
     def get_chamfer_corners(self, corner_offset_mm: float = 2) -> List[App.Vector]:
@@ -70,9 +77,6 @@ class LighteningHoleBounds:
         right_chamfer_ref: Part.Line = self.right.copy()
         right_chamfer_ref.translate(App.Vector(0.0,-corner_offset_mm,0.0))
         self.right_chamfer_pts = self.get_intersections(right_chamfer_ref)
-
-        self.left_l_chamfer_pts = self.get_chamfer_line_pts(self.left_bnd_pts, corner_offset_mm)
-        self.right_l_chamfer_pts = self.get_chamfer_line_pts(self.right_bnd_pts, corner_offset_mm)
 
     def get_chamfer_line_pts(self, pts: List[App.Vector], offset_mm: float) -> List[App.Vector]:
 
@@ -134,15 +138,6 @@ class LighteningHoleBounds:
 
         App.ActiveDocument.recompute()
         
-
-    # locate the points on the top and bottom of the inner contour that will be
-    # the knot locations to form the top and bottom bspline
-    def get_inner_contour_control_points(self):
-        pass
-
-    def generate_lightening_holes(self):
-        pass
-
     # find the points on a line that intersect the top and bottom of the airfoil
     # inner contour
     def get_intersections(self, bound_line: Part.Line) -> List[App.Vector]:
@@ -223,8 +218,4 @@ def create_airfoil_inner_profile(
         bounds.append(new_bound)
 
     return bounds
-
-def create_lightening_hole(int_profile: Part.Shape, left_bound: Part.Line, right_bound: Part.Line):
-    print("create_lightening_hole")
-
 
