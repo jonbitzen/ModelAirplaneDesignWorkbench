@@ -6,42 +6,94 @@ import numpy
 from typing import List
 
 class LighteningHoleBounds:
-    def __init__(self, shape: Part.Shape, left: Part.Line, right: Part.Line):
+    def __init__(self, airfoil_shape: Part.Shape, left: Part.Line, right: Part.Line):
         self.left = left
         self.right = right
-        self.shape = shape
+        self.airfoil_shape = airfoil_shape
 
-    def get_right_intersections(self):
-        self.get_intersections(self.right)
+        self.left_chamfer_pts: List[App.Vector] = []
+        self.right_chamfer_pts: List[App.Vector] = []
 
-    def get_left_intersections(self):
-        self.get_intersections(self.left)
+        self.left_bnd_pts: List[App.Vector] = []
+        self.right_bnd_pts: List[App.Vector] = []
 
-    def get_intersections(self, bound_line: Part.Line) -> List[Draft.Point]:
-        intersections: List[Draft.Point]
+    # locate the points that will be used to form the chamfer coordinate
+    def get_chamfer_corners(self, corner_offset_mm: float = 2) -> List[App.Vector]:
 
-        l_f = Part.show(bound_line)
-        l_f.ViewObject.LineColor = BLUE(0.3)
+        # Get reference points on the left and right boundary line
+        self.left_bnd_pts = self.get_intersections(self.left)
+        self.right_bnd_pts = self.get_intersections(self.right)
+
+        # create lines that are offset from the left and right, locate where they
+        # intersect with the top and bottom curve, these will join with the top
+        # bspline for the interior contour
+        left_chamfer_ref: Part.Line = self.left.copy()
+        left_chamfer_ref.translate(App.Vector(0.0,corner_offset_mm,0.0))
+        self.left_chamfer_pts = self.get_intersections(left_chamfer_ref)
+
+        right_chamfer_ref: Part.Line = self.right.copy()
+        right_chamfer_ref.translate(App.Vector(0.0,-corner_offset_mm,0.0))
+        self.right_chamfer_pts = self.get_intersections(right_chamfer_ref)
+
+        # locate points on the left and right lines that intersect the contours
+        # then back up and down using the offset dimension from each side
+
+
+    def draw_points(self, pts: List[App.Vector], grp: App.DocumentObjectGroup):
+        for pt in pts:
+            pf = Draft.make_point(pt)
+            pf.ViewObject.PointColor = GREEN(0.5)
+            pf.ViewObject.PointSize = 10.0
+            grp.addObject(pf)
+
+    def show(self) -> None:
+
+        doc = App.ActiveDocument
+        grp: App.DocumentObjectGroup = create_group("lhb-viz")
+
+        left_f = Part.show(self.left)
+        left_f.ViewObject.LineColor = BLUE(0.5)
+        grp.addObject(left_f)
+
+        right_f = Part.show(self.right)
+        right_f.ViewObject.LineColor = BLUE(0.5)
+        grp.addObject(right_f)
+
+        self.draw_points(self.left_bnd_pts, grp)
+        self.draw_points(self.right_bnd_pts, grp)
+
+        self.draw_points(self.left_chamfer_pts, grp)
+        self.draw_points(self.right_chamfer_pts, grp)
+
+        App.ActiveDocument.recompute()
+        
+
+    # locate the points on the top and bottom of the inner contour that will be
+    # the knot locations to form the top and bottom bspline
+    def get_inner_contour_control_points(self):
+        pass
+
+    def generate_lightening_holes(self):
+        pass
+
+    # find the points on a line that intersect the top and bottom of the airfoil
+    # inner contour
+    def get_intersections(self, bound_line: Part.Line) -> List[App.Vector]:
+        intersections: List[App.Vector] = []
 
         edge: Part.Edge
-        for edge in self.shape.Edges:
+        for edge in self.airfoil_shape.Edges:
             profile_curve: Part.Curve =  edge.Curve
             profile_curve = profile_curve.trim(*edge.ParameterRange)
             bl_curve: Part.Curve = bound_line.Edges[0].Curve.trim(*bound_line.Edges[0].ParameterRange)
             plane = Part.Plane(App.Vector(0,0,0), App.Vector(1,0,0))
             pts = profile_curve.intersect2d(bl_curve, plane)
             for pt in pts:
-                Draft.make_point(0, -pt[1], pt[0], color=GREEN(0.7), point_size=10.0)
+                intersections.append(App.Vector(0,-pt[1], pt[0]))
 
         App.ActiveDocument.recompute()
 
-    def show_bounds(self) -> None:
-
-        left_f = Part.show(self.left)
-        left_f.ViewObject.LineColor = BLUE(0.5)
-
-        right_f = Part.show(self.right)
-        right_f.ViewObject.LineColor = BLUE(0.5)
+        return intersections                        
 
 def create_group(name: str, doc: App.Document = App.ActiveDocument) -> App.DocumentObjectGroup:
     return doc.addObject("App::DocumentObjectGroup", name)
@@ -75,8 +127,6 @@ def create_airfoil_inner_profile(
     segment_length = bbox.YLength/num_segments
     
     # create a set of reference lines the demarcate the rib without thinking explictly of structure
-    ref_grp = create_group("ref_lines")
-    # ref_lines = [Part.Edge]
     ref_lines: List[Part.Edge] = []
     for y_coord in numpy.arange(bbox.YMin, bbox.YMax + segment_length, segment_length):
         top_pt = (0, y_coord, bbox.ZMax + 1)
@@ -84,10 +134,6 @@ def create_airfoil_inner_profile(
         
         ref_line = Part.makeLine(top_pt, bottom_pt)
         ref_lines.append(ref_line)
-
-        # ref_feature = Part.show(ref_line, "ref_line")
-        # ref_feature.ViewObject.LineColor = GREY(0.5)
-        # ref_grp.addObject(ref_feature)
         
     # create a set of lightening hole bound areas
     bounds: List[LighteningHoleBounds] = []
@@ -95,59 +141,14 @@ def create_airfoil_inner_profile(
         left = ref_lines[ref_idx].copy()
         if ref_idx != 0:
             left.translate(App.Vector(0.0, structure_thk_mm/2, 0.0))
-        
-        # sl = Part.show(left, "str_line_L")
-        # sl.ViewObject.LineColor = BLUE(0.3)
-        # ref_grp.addObject(sl)
 
         right = ref_lines[ref_idx+1].copy()
         right.translate(App.Vector(0.0, -structure_thk_mm/2, 0.0))
-        
-        # sr = Part.show(right, "str_line_R")
-        # sr.ViewObject.LineColor = BLUE(0.3)
-        # ref_grp.addObject(sr)
-
+    
         new_bound: LighteningHoleBounds = LighteningHoleBounds(offset, left, right)
         bounds.append(new_bound)
 
-        bounds[0].get_left_intersections()
-        bounds[0].get_right_intersections()
-
-    return bounds[0]
-
-    # # run over each the bounding areas, and locate control points to generate the
-    # # hole geometry
-    # for bounds_set in bounds:
-    #     # iterate over every edge in the shape, see where it intersects the curent bounds
-    #     print("---------------------------")
-    #     for edge_idx in range(0, len(bounds_set.shape.Edges)):
-    #         curve: Part.Curve = bounds_set.shape.Edges[edge_idx].Curve
-
-    #         i_left = curve.intersect(left.Edges[0].Curve)
-
-    #         pt: Draft.Point
-    #         for pt in i_left:
-    #             Draft.make_point(pt.X, pt.Y, pt.Z, point_size=5.0, color=GREEN(0.7))
-            
-    #         i_right = curve.intersect(right.Edges[0].Curve)
-            
-           
-
-
-    # for rl_idx in range(1, len(ref_lines)):
-
-    #     left = ref_lines[rl_idx].copy()
-    #     if rl_idx != 1:
-    #         left.translate(App.Vector(0.0, -structure_thk_mm/2, 0.0))
-    #     sl = Part.show(left, "str_line")
-    #     sl.ViewObject.LineColor = BLUE(0.3)
-
-    #     right = ref_lines[rl_idx].copy()
-    #     right.translate(App.Vector(0.0, structure_thk_mm/2, 0.0))
-    #     sr = Part.show(right, "str_line")
-    #     sr.ViewObject.LineColor = BLUE(0.3)
-
-    #     create_lightening_hole(offset, left, right)
+    return bounds
 
 def create_lightening_hole(int_profile: Part.Shape, left_bound: Part.Line, right_bound: Part.Line):
     print("create_lightening_hole")
