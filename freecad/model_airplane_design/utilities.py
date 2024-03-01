@@ -11,11 +11,47 @@ class LighteningHoleBounds:
         self.right = right
         self.airfoil_shape = airfoil_shape
 
+        # boundary points
+        self.left_bnd_pts: List[App.Vector] = []
+        self.right_bnd_pts: List[App.Vector] = []
+
         self.left_chamfer_pts: List[App.Vector] = []
         self.right_chamfer_pts: List[App.Vector] = []
 
-        self.left_bnd_pts: List[App.Vector] = []
-        self.right_bnd_pts: List[App.Vector] = []
+        self.left_l_chamfer_pts: List[App.Vector] = []
+        self.right_l_chamfer_pts: List[App.Vector] = []
+
+        self.upper_spline_pts: List[App.Vector] = []
+        self.lower_spline_pts: List[App.Vector] = []
+
+
+    def get_spline_control_pts(self, num_ctl_pts: int = 5) -> tuple[List[App.Vector], List[App.Vector]]:
+        
+        upper_spline_pts: List[App.Vector] = []
+        lower_spline_pts: List[App.Vector] = []
+
+        # so we need to get the left and right boundary Y coordinate to calculate
+        # the extents of the bspline region
+        y_L: float = self.left_chamfer_pts[0].y
+        y_R: float =self.right_chamfer_pts[0].y
+        dY: float = (y_R - y_L)/num_ctl_pts
+
+        ref_line = Part.makeLine(
+            App.Vector(0.0, y_L, self.left.Vertexes[0].Point.z), 
+            App.Vector(0.0, y_L, self.left.Vertexes[1].Point.z)
+            )
+
+        for idx in range(0, num_ctl_pts+1):
+            tmp_line = ref_line.copy()
+            tmp_line.translate(App.Vector(0.0, dY*idx, 0.0))
+
+            pts = self.get_intersections(tmp_line)
+            pts.sort(key=lambda pt: pt.z, reverse=True)
+
+            self.upper_spline_pts.append(pts[0])
+            self.lower_spline_pts.append(pts[1])
+
+        return (self.upper_spline_pts, self.lower_spline_pts)
 
     # locate the points that will be used to form the chamfer coordinate
     def get_chamfer_corners(self, corner_offset_mm: float = 2) -> List[App.Vector]:
@@ -35,20 +71,45 @@ class LighteningHoleBounds:
         right_chamfer_ref.translate(App.Vector(0.0,-corner_offset_mm,0.0))
         self.right_chamfer_pts = self.get_intersections(right_chamfer_ref)
 
+        self.left_l_chamfer_pts = self.get_chamfer_line_pts(self.left_bnd_pts, corner_offset_mm)
+        self.right_l_chamfer_pts = self.get_chamfer_line_pts(self.right_bnd_pts, corner_offset_mm)
+
+    def get_chamfer_line_pts(self, pts: List[App.Vector], offset_mm: float) -> List[App.Vector]:
+
+        chm_pts: List[App.Vector] = []
         # locate points on the left and right lines that intersect the contours
         # then back up and down using the offset dimension from each side
+        p1 = pts[0]
+        p2 = pts[1]
+
+        # ensure the distance between p1 and p2 is long enough to fit a non-zero
+        # line segment between the chamfer reference points
+        if p1.distanceToPoint(p2) > 2* offset_mm:
+            b1 = App.Vector(p1)
+            b2 = App.Vector(p2)
+            b1.z = b1.z - offset_mm
+            b2.z = b2.z + offset_mm
+            chm_pts = [b1,b2]
+        # if the distance between p1 and p2 is below the min threshold for the
+        # chamfer offset, then just provide a single point midway between p1 and p2
+        else:
+            b1 = (p1 + p2)/2
+            chm_pts = [b1]
+
+        chm_pts.sort(key=lambda pt: pt.z, reverse=True)
+
+        return chm_pts
 
 
-    def draw_points(self, pts: List[App.Vector], grp: App.DocumentObjectGroup):
+    def draw_points(self, pts: List[App.Vector], grp: App.DocumentObjectGroup, color: tuple = (0.0, 0.5, 0.0)) -> None:
         for pt in pts:
             pf = Draft.make_point(pt)
-            pf.ViewObject.PointColor = GREEN(0.5)
+            pf.ViewObject.PointColor = color
             pf.ViewObject.PointSize = 10.0
             grp.addObject(pf)
 
     def show(self) -> None:
 
-        doc = App.ActiveDocument
         grp: App.DocumentObjectGroup = create_group("lhb-viz")
 
         left_f = Part.show(self.left)
@@ -64,6 +125,12 @@ class LighteningHoleBounds:
 
         self.draw_points(self.left_chamfer_pts, grp)
         self.draw_points(self.right_chamfer_pts, grp)
+
+        self.draw_points(self.left_l_chamfer_pts, grp, TEAL(1.0))
+        self.draw_points(self.right_l_chamfer_pts, grp, TEAL(1.0))
+
+        self.draw_points(self.upper_spline_pts, grp, TEAL(1.0))
+        self.draw_points(self.lower_spline_pts, grp, TEAL(1.0))
 
         App.ActiveDocument.recompute()
         
@@ -91,12 +158,19 @@ class LighteningHoleBounds:
             for pt in pts:
                 intersections.append(App.Vector(0,-pt[1], pt[0]))
 
-        App.ActiveDocument.recompute()
+        # sort by highest z coordinate, so that intersections with the top of the
+        # airfoil are first, and intersections with the bottom of the airfoil are
+        # last
+        intersections.sort(key=lambda pt: pt.z, reverse=True)
 
         return intersections                        
 
 def create_group(name: str, doc: App.Document = App.ActiveDocument) -> App.DocumentObjectGroup:
     return doc.addObject("App::DocumentObjectGroup", name)
+
+def TEAL(level: float) -> tuple:
+    level = numpy.clip(level, 0.1, 1.0)
+    return (0.0, level, level)
 
 def BLACK() -> tuple:
     return (0.0, 0.0, 0.0)
