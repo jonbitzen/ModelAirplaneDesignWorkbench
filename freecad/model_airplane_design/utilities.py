@@ -18,9 +18,11 @@ class LighteningHoleBounds:
         self.left_chamfer_pts: List[App.Vector] = []
         self.right_chamfer_pts: List[App.Vector] = []
 
+        # points on the bound line
         self.left_l_chamfer_pts: List[App.Vector] = []
         self.right_l_chamfer_pts: List[App.Vector] = []
 
+        # set of control points for the upper and lower spline
         self.upper_spline_pts: List[App.Vector] = []
         self.lower_spline_pts: List[App.Vector] = []
 
@@ -183,7 +185,7 @@ def BLUE(blue: float = 1.0) -> tuple:
     return (0.0, 0.0, blue)
 
 def create_airfoil_inner_profile(
-        airfoil_sk : Sketcher.Sketch, 
+        airfoil_sk: Sketcher.Sketch, 
         offset_mm: float = 2.0, 
         structure_thk_mm: float = 2.0
 ):
@@ -219,3 +221,90 @@ def create_airfoil_inner_profile(
 
     return bounds
 
+def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
+
+    bnds: List[LighteningHoleBounds] = create_airfoil_inner_profile(airfoil_sk)
+
+    sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
+    sk.Placement = App.Placement(
+        App.Vector(0.000000, 0.000000, 0.000000), 
+        App.Rotation(0.500000, 0.500000, 0.500000, 0.500000)
+    )
+
+    # rotate points into the yz plane, it'd be great not to hardcode this
+    rot = App.Rotation(App.Vector(.5774,.5774,.5774), Degree=-120)
+
+    def draw_line(pts: List[App.Vector]) -> tuple[int, Part.LineSegment]:
+        if len(pts) > 1:
+            p1 = rot.multVec(pts[0])
+            p2 = rot.multVec(pts[1])
+            line = Part.LineSegment(p1, p2)
+            id = sk.addGeometry(line, False)
+            return id, line
+        return -1, None
+
+    def draw_spline(pts: List[App.Vector]) -> tuple[int, Part.BSplineCurve]:
+        xf_coords: List[App.Vector] = [rot.multVec(pt) for pt in pts]
+        bsp = Part.BSplineCurve()
+        bsp.interpolate(xf_coords)
+        
+        id = sk.addGeometry(bsp)
+        sk.addConstraint(Sketcher.Constraint("Block", id))
+        return id, bsp
+    
+    for bnd in bnds:
+        id_L, left_line = draw_line(bnd.left_l_chamfer_pts)
+        id_R, right_line = draw_line(bnd.right_l_chamfer_pts)
+        id_Up, upper_bsp = draw_spline(bnd.upper_spline_pts)
+        id_Lo, lower_bsp = draw_spline(bnd.lower_spline_pts)
+
+        
+
+        # if the id is < 0, we dont have enough space to have a line, so make
+        # a pair of arc circles instead
+        if id_L < 0:
+            left_chamfer_pts: List[App.Vector] = [rot.multVec(pt) for pt in bnd.left_chamfer_pts]
+            p1 = left_chamfer_pts[0]
+            p2 = left_chamfer_pts[1]
+            
+            mid_pt = (p1+p2)/2
+            radius = p1.distanceToPoint(p2)/2
+
+            arc_top = Part.ArcOfCircle(
+                Part.Circle(
+                    mid_pt,
+                    App.Vector(0,0,1),
+                    radius
+                ),
+                numpy.deg2rad(90),
+                numpy.deg2rad(180)
+            )
+        
+            id_arc_top = sk.addGeometry(arc_top, False)
+
+            bsp_pt_id = 1 if upper_bsp.StartPoint == p1 else 2
+            print(arc_top.StartPoint)
+            arc_pt_id = 1 if arc_top.StartPoint == p1 else 2
+            print("arc pt = " + str(arc_pt_id))
+
+            arc_bottom = Part.ArcOfCircle(
+                Part.Circle(
+                    mid_pt,
+                    App.Vector(0,0,1),
+                    radius
+                ),
+                numpy.deg2rad(-180),
+                numpy.deg2rad(-90)
+            )
+
+            print("lower chamfer pt is first: " + str(lower_bsp.StartPoint == p2))
+
+            id_arc_bottom = sk.addGeometry(arc_bottom, False)
+
+        else:
+            pass
+
+    App.ActiveDocument.recompute()
+
+    
+            
