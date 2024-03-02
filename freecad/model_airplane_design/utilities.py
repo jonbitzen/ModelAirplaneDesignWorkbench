@@ -243,6 +243,7 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
             p2 = inv_placement.multVec(pts[1])
             line = Part.LineSegment(p1, p2)
             id = sk.addGeometry(line, False)
+            sk.addConstraint(Sketcher.Constraint("Block", id))
             return id, line
         return -1, None
 
@@ -266,32 +267,33 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
             lower_bsp: Part.BSplineCurve, lower_bsp_id: int,
             chamfer_side: ChamferSide) -> None:
         
+        ch_pts: List[App.Vector] = [inv_placement.multVec(pt) for pt in chamfer_pts]
+              
+
+        top_arc_start: float; top_arc_end: float
+        bottom_arc_start: float; bottom_arc_end: float
+
+        # TODO: Really need to understand how arc start stop work here
+        match chamfer_side:
+            case ChamferSide.LEFT:
+                top_arc_start = numpy.deg2rad(90)
+                top_arc_end = numpy.deg2rad(180)
+                bottom_arc_start = numpy.deg2rad(-180)
+                bottom_arc_end = numpy.deg2rad(-90)
+                
+            case ChamferSide.RIGHT:
+                top_arc_start = numpy.deg2rad(0)
+                top_arc_end = numpy.deg2rad(90)
+                bottom_arc_start = numpy.deg2rad(-90)
+                bottom_arc_end = numpy.deg2rad(0)
+
         # if the space was too small to form a line with the target offset, then
         # we create two arcs and join them directly, without a line in the middle
         if line is None:
-            ch_pts: List[App.Vector] = [inv_placement.multVec(pt) for pt in chamfer_pts]
             p1 = ch_pts[0]
             p2 = ch_pts[1]
-
             mid_pt = (p1+p2)/2
-            radius = p1.distanceToPoint(p2)/2        
-
-            top_arc_start: float; top_arc_end: float
-            bottom_arc_start: float; bottom_arc_end: float
-
-            # TODO: Really need to understand how arc start stop work here
-            match chamfer_side:
-                case ChamferSide.LEFT:
-                    top_arc_start = numpy.deg2rad(90)
-                    top_arc_end = numpy.deg2rad(180)
-                    bottom_arc_start = numpy.deg2rad(-180)
-                    bottom_arc_end = numpy.deg2rad(-90)
-                    
-                case ChamferSide.RIGHT:
-                    top_arc_start = numpy.deg2rad(0)
-                    top_arc_end = numpy.deg2rad(90)
-                    bottom_arc_start = numpy.deg2rad(-90)
-                    bottom_arc_end = numpy.deg2rad(0)
+            radius = p1.distanceToPoint(p2)/2  
 
             arc_top = Part.ArcOfCircle(
                 Part.Circle(
@@ -334,7 +336,63 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
         # end to the top and bottom spline sections
         else:
             
-            pass
+            arc_radius = numpy.abs(ch_pts[0].x - line.StartPoint.x) 
+            top_arc_center = App.Vector(ch_pts[0].x, line.StartPoint.y, 0.0)
+
+            arc_top = Part.ArcOfCircle(
+                Part.Circle(
+                    top_arc_center,
+                    App.Vector(0,0,1),
+                    arc_radius
+                ),
+                top_arc_start,
+                top_arc_end
+            )
+            id_arc_top = sk.addGeometry(arc_top, False)
+            bsp_pt_id = 1 if upper_bsp.StartPoint == ch_pts[0] else 2
+            
+            # find whether the start or end point is closest to the upper bspline
+            # profile, choose the closest one to create the tangent constraint
+            pt_dist = [
+                (1, arc_top.StartPoint.distanceToPoint(ch_pts[0])),
+                (2, arc_top.EndPoint.distanceToPoint(ch_pts[0]))
+            ]
+            pt_dist.sort(key=lambda x : x[1])
+            arc_pt_id = pt_dist[0][0]
+
+            top_arc_other_id = 1 if arc_pt_id == 2  else 2
+            
+            sk.addConstraint(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
+            sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, line_id, 1))
+
+            btm_arc_ctr = App.Vector(ch_pts[1].x, line.EndPoint.y, 0.0)
+
+            arc_bottom = Part.ArcOfCircle(
+                Part.Circle(
+                    btm_arc_ctr,
+                    App.Vector(0,0,1),
+                    arc_radius
+                ),
+                bottom_arc_start,
+                bottom_arc_end
+            )
+
+            id_arc_bottom = sk.addGeometry(arc_bottom, False)
+
+            bsp_pt_id = 1 if lower_bsp.StartPoint == ch_pts[1] else 2
+
+            # again, find the nearest point to the chamfer target
+            pt_dist = [
+                (1, arc_bottom.StartPoint.distanceToPoint(ch_pts[1])),
+                (2, arc_bottom.EndPoint.distanceToPoint(ch_pts[1]))
+            ]
+            pt_dist.sort(key=lambda x : x[1])
+            arc_pt_id = pt_dist[0][0]
+            btm_arc_other_id = 1 if arc_pt_id == 2  else 2
+
+            sk.addConstraint(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
+            sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_bottom, btm_arc_other_id, line_id, 2))
+
     for bnd in bnds:
         left_line_id, left_line = draw_line(bnd.left_l_chamfer_pts)
         right_line_id, right_line = draw_line(bnd.right_l_chamfer_pts)
