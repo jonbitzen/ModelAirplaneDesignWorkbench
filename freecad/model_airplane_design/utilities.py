@@ -2,6 +2,7 @@ import FreeCAD as App
 import Part
 import Draft
 import Sketcher
+import math
 import numpy
 from enum import Enum
 from typing import List
@@ -12,6 +13,8 @@ class LighteningHoleBounds:
         self.right = right
         self.airfoil_shape = airfoil_shape
 
+        # TODO: improve and document these names before I forget what they all
+        #       mean; probably need to make a general explanation of how LHB works
         # boundary points
         self.left_bnd_pts: List[App.Vector] = []
         self.right_bnd_pts: List[App.Vector] = []
@@ -185,46 +188,108 @@ def GREEN(green: float = 1.0) -> tuple:
 def BLUE(blue: float = 1.0) -> tuple:
     return (0.0, 0.0, blue)
 
-def create_airfoil_inner_profile(
-        airfoil_sk: Sketcher.Sketch, 
-        offset_mm: float = 2.0, 
-        structure_thk_mm: float = 2.0
+class Interval:
+    start: float
+    end: float
+    def __init__(self, start: float = 0.0, end: float = 0.0):
+        self.start = start
+        self.end = end
+
+    def length(self) -> float:
+        return self.end-self.start
+
+    def __str__(self):
+        return "start=" + str(self.start) + ", end=" + str(self.end)
+
+def generate_hole_bounds(
+    airfoil_sk: Sketcher.Sketch, 
+    interferences: List[Sketcher.Sketch] = [],
+    profile_offset: float = 2.0, 
+    wall_thickness: float = 2.0,
+    target_num_holes: int = 5
 ):
-    print("creating inner profile for airfoil using airfoil sketch " + airfoil_sk.Label)
-    offset = airfoil_sk.Shape.makeOffset2D(-offset_mm, join=2)
-    f = Part.show(offset, "airfoil-offset")
-    f.ViewObject.LineColor = RED(0.3)
-    bbox = offset.BoundBox
-    num_segments = 5
-    segment_length = bbox.YLength/num_segments
     
-    # create a set of reference lines the demarcate the rib without thinking explictly of structure
-    ref_lines: List[Part.Edge] = []
-    for y_coord in numpy.arange(bbox.YMin, bbox.YMax + segment_length, segment_length):
-        top_pt = (0, y_coord, bbox.ZMax + 1)
-        bottom_pt = (0, y_coord, bbox.ZMin - 1)
+    # create the interior hole profile using an offset
+    af_inner_profile = airfoil_sk.Shape.makeOffset2D(-profile_offset, join=2)
+
+    # create a list of intervals, and make sure they are sorted by starting
+    # value so we can insert properly
+    intf_intervals: List[Interval] = [Interval(intf.Shape.BoundBox.YMin, intf.Shape.BoundBox.YMax) for intf in interferences]
+    intf_intervals.sort(key=lambda intv: intv.start)
+
+    # first, calculate the nominal max hole width; this will be used to calculate
+    # the number of holes in each of the space intervals between interferences
+    bbox = af_inner_profile.BoundBox
+    max_hole_width: float = (bbox.YLength - wall_thickness*(target_num_holes+1))/target_num_holes
+
+    profile_interval: Interval = Interval(bbox.YMin, bbox.YMax)
+    hole_intervals: List[Interval] = []
+
+    # second, calculate the valid set of intervals where we will generate holes
+    current_interval: Interval = Interval(profile_interval.start, 0.0)
+    for intf_interval in intf_intervals:
+        current_interval.end = intf_interval.start
+        hole_intervals.append(current_interval)
+        current_interval = Interval(intf_interval.end, 0.0)
+    current_interval.end = profile_interval.end
+    hole_intervals.append(current_interval)
+
+    # TODO: We often get extra wall spacing in areas where the line height is
+    #       zero, but, basically, we ought to be able to compensate for this,
+    #       since we can detect it when we generate the bound list
+    def generate_bounds(interval: Interval) -> List[LighteningHoleBounds]:
+ 
+        num_segments: int = math.ceil(interval.length()/max_hole_width)
+        segment_length: float = interval.length()/num_segments
+  
+        ref_lines: List[Part.Edge] = []
+        for y_coord in numpy.arange(interval.start, interval.end + segment_length, segment_length):
+            top_pt = (0, y_coord, bbox.ZMax + 1)
+            bottom_pt = (0, y_coord, bbox.ZMin - 1)
+            
+            ref_line = Part.makeLine(top_pt, bottom_pt)
+            ref_lines.append(ref_line)
+
+        bounds: List[LighteningHoleBounds] = []
+        for ref_idx in range(0, num_segments):
+            left = ref_lines[ref_idx].copy()
+
+            left_offset = wall_thickness/2
+            right_offset = -left_offset
+            if ref_idx == 0:
+                left_offset = wall_thickness
+            if ref_idx == num_segments-1:
+                right_offset = -wall_thickness
+                pass
+            
+            left.translate(App.Vector(0.0, left_offset, 0.0))
+
+            right = ref_lines[ref_idx+1].copy()
+            right.translate(App.Vector(0.0, right_offset, 0.0))
         
-        ref_line = Part.makeLine(top_pt, bottom_pt)
-        ref_lines.append(ref_line)
-        
-    # create a set of lightening hole bound areas
-    bounds: List[LighteningHoleBounds] = []
-    for ref_idx in range(0, num_segments):
-        left = ref_lines[ref_idx].copy()
-        if ref_idx != 0:
-            left.translate(App.Vector(0.0, structure_thk_mm/2, 0.0))
+            new_bound: LighteningHoleBounds = LighteningHoleBounds(af_inner_profile, left, right)
+            bounds.append(new_bound)
+        return bounds
 
-        right = ref_lines[ref_idx+1].copy()
-        right.translate(App.Vector(0.0, -structure_thk_mm/2, 0.0))
-    
-        new_bound: LighteningHoleBounds = LighteningHoleBounds(offset, left, right)
-        bounds.append(new_bound)
+    bnds: List[LighteningHoleBounds] = []
+    for intv in hole_intervals:
+        bnds.extend(generate_bounds(intv))
 
-    return bounds
+    return bnds
 
-def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
+# TODO: passing in entire sketches without actually performing any operations on
+#       them is probably a bit heavy-weight, we should possibly lighten up these
+#       args
+def create_lightening_hole_sketch(
+    airfoil_sk: Sketcher.Sketch,
+    interferences: List[Sketcher.Sketch] = []
+):
 
-    bnds: List[LighteningHoleBounds] = create_airfoil_inner_profile(airfoil_sk)
+    bnds: List[LighteningHoleBounds] = \
+            generate_hole_bounds(
+                airfoil_sk,
+                interferences
+            )
 
     # create the sketch on the YZ plane
     sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
@@ -259,6 +324,18 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
     class ChamferSide(Enum):
         LEFT = 1
         RIGHT = 2
+
+    # Note that curve must be an instance of Part.BoundedCurve; unfortunately
+    # if you provide the abstract base class, the interpreter rejects it since
+    # the abstract base probably has type hints, but isn't exposed directly to
+    # the interpreter
+    def get_nearest_end_to_pt(target_pt: App.Vector, curve):
+        pt_dist = [
+            (1, curve.StartPoint.distanceToPoint(target_pt)),
+            (2, curve.EndPoint.distanceToPoint(target_pt))
+        ]
+        pt_dist.sort(key=lambda x : x[1])
+        return pt_dist[0][0]
 
     def draw_chamfers(
             chamfer_pts: List[App.Vector], 
@@ -307,7 +384,7 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
 
             id_arc_top = sk.addGeometry(arc_top, False)
             bsp_pt_id = 1 if upper_bsp.StartPoint == p1 else 2
-            arc_pt_id = 1 if arc_top.StartPoint == p1 else 2
+            arc_pt_id = get_nearest_end_to_pt(p1, arc_top)
             top_arc_other_id = 1 if arc_pt_id == 2  else 2
 
             # TODO: We really need to know why the order that we apply the 
@@ -327,7 +404,7 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
 
             id_arc_bottom = sk.addGeometry(arc_bottom, False)
             bsp_pt_id = 1 if lower_bsp.StartPoint == p2 else 2
-            arc_pt_id = 1 if arc_bottom.StartPoint == p2 else 2
+            arc_pt_id = get_nearest_end_to_pt(p2, arc_bottom)
             bottom_arc_other_id = 1 if arc_pt_id == 2 else 2
 
             sk.addConstraint(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
@@ -335,7 +412,6 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
         # we have a line in the middle, so create arcs that join the line on each
         # end to the top and bottom spline sections
         else:
-            
             arc_radius = numpy.abs(ch_pts[0].x - line.StartPoint.x) 
             top_arc_center = App.Vector(ch_pts[0].x, line.StartPoint.y, 0.0)
 
@@ -348,18 +424,10 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
                 top_arc_start,
                 top_arc_end
             )
+            
             id_arc_top = sk.addGeometry(arc_top, False)
             bsp_pt_id = 1 if upper_bsp.StartPoint == ch_pts[0] else 2
-            
-            # find whether the start or end point is closest to the upper bspline
-            # profile, choose the closest one to create the tangent constraint
-            pt_dist = [
-                (1, arc_top.StartPoint.distanceToPoint(ch_pts[0])),
-                (2, arc_top.EndPoint.distanceToPoint(ch_pts[0]))
-            ]
-            pt_dist.sort(key=lambda x : x[1])
-            arc_pt_id = pt_dist[0][0]
-
+            arc_pt_id = get_nearest_end_to_pt(ch_pts[0], arc_top)
             top_arc_other_id = 1 if arc_pt_id == 2  else 2
             
             sk.addConstraint(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
@@ -378,16 +446,8 @@ def create_lightening_hole_sketch(airfoil_sk: Sketcher.Sketch):
             )
 
             id_arc_bottom = sk.addGeometry(arc_bottom, False)
-
             bsp_pt_id = 1 if lower_bsp.StartPoint == ch_pts[1] else 2
-
-            # again, find the nearest point to the chamfer target
-            pt_dist = [
-                (1, arc_bottom.StartPoint.distanceToPoint(ch_pts[1])),
-                (2, arc_bottom.EndPoint.distanceToPoint(ch_pts[1]))
-            ]
-            pt_dist.sort(key=lambda x : x[1])
-            arc_pt_id = pt_dist[0][0]
+            arc_pt_id = get_nearest_end_to_pt(ch_pts[1], arc_bottom)
             btm_arc_other_id = 1 if arc_pt_id == 2  else 2
 
             sk.addConstraint(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
