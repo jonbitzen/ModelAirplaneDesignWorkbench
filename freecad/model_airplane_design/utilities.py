@@ -206,7 +206,7 @@ def generate_hole_bounds(
     interferences: List[Sketcher.Sketch] = [],
     profile_offset: float = 2.0, 
     wall_thickness: float = 2.0,
-    target_num_holes: int = 5
+    target_num_holes: int = 6
 ):
     
     # create the interior hole profile using an offset
@@ -424,7 +424,7 @@ def create_lightening_hole_sketch(
                 top_arc_start,
                 top_arc_end
             )
-            
+
             id_arc_top = sk.addGeometry(arc_top, False)
             bsp_pt_id = 1 if upper_bsp.StartPoint == ch_pts[0] else 2
             arc_pt_id = get_nearest_end_to_pt(ch_pts[0], arc_top)
