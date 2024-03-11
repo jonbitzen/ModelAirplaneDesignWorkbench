@@ -35,35 +35,47 @@ class LighteningHoleBounds:
     Stores a set of boundaries and control points to generate lightening holes
     for an airfoil
     """
-    def __init__(self, airfoil_shape: Part.Shape, left_bound: Part.Line, right_bound: Part.Line):
+    def __init__(
+        self, 
+        airfoil_shape: Part.Shape, 
+        left_bound: Part.Line, 
+        right_bound: Part.Line,
+        chamfer_radius: float = 2.0
+    ):
+        
+        # left and right boundary lines; these are sized to intersect the upper
+        # and lower part of the internal profile, airfoil_shape
         self.left_bound = left_bound
         self.right_bound = right_bound
         self.airfoil_shape = airfoil_shape
 
-        # TODO: improve and document these names before I forget what they all
-        #       mean; probably need to make a general explanation of how LHB works
-        # boundary points
-        self.left_bnd_pts: List[App.Vector] = []
-        self.right_bnd_pts: List[App.Vector] = []
+        # the corners are the location where the left and right bound lines
+        # intersect the airfoil_shape
+        self.left_corner_pts: List[App.Vector] = self.get_intersections(self.left_bound)
+        self.right_corner_pts: List[App.Vector] = self.get_intersections(self.right_bound)
 
-        self.left_chamfer_pts: List[App.Vector] = []
-        self.right_chamfer_pts: List[App.Vector] = []
+        # left-hand and right-hand bounds of the upper and lower spline
+        left_chamfer_ref: Part.Line = self.left_bound.copy()
+        left_chamfer_ref.translate(App.Vector(0.0,chamfer_radius,0.0))
+        self.spline_left_bnd_pts: List[App.Vector] = self.get_intersections(left_chamfer_ref)
 
-        # points on the bound line
-        self.left_l_chamfer_pts: List[App.Vector] = []
-        self.right_l_chamfer_pts: List[App.Vector] = []
+        right_chamfer_ref: Part.Line = self.right_bound.copy()
+        right_chamfer_ref.translate(App.Vector(0.0,-chamfer_radius,0.0))
+        self.spline_right_bnd_pts: List[App.Vector] = self.get_intersections(right_chamfer_ref)
+
+        # points to form the left and right line for the hole; these are usually
+        # reduced by the chamfer size
+        self.left_line_pts: List[App.Vector] = []
+        self.right_line_pts: List[App.Vector] = []
 
         # set of control points for the upper and lower spline
         self.upper_spline_pts: List[App.Vector] = []
         self.lower_spline_pts: List[App.Vector] = []
 
-        self.get_chamfer_corners()
         self.upper_spline_pts, self.lower_spline_pts = self.get_spline_control_pts()
 
-        self.offset = 2
-
-        self.left_l_chamfer_pts = self.get_chamfer_line_pts(self.left_bnd_pts, self.offset)
-        self.right_l_chamfer_pts = self.get_chamfer_line_pts(self.right_bnd_pts, self.offset)
+        self.left_line_pts = self.get_hole_side_coords(self.left_corner_pts, chamfer_radius)
+        self.right_line_pts = self.get_hole_side_coords(self.right_corner_pts, chamfer_radius)
 
     def get_spline_control_pts(self, num_ctl_pts: int = 5) -> tuple[List[App.Vector], List[App.Vector]]:
         """
@@ -75,8 +87,8 @@ class LighteningHoleBounds:
 
         # so we need to get the left and right boundary Y coordinate to calculate
         # the extents of the bspline region
-        y_L: float = self.left_chamfer_pts[0].y
-        y_R: float =self.right_chamfer_pts[0].y
+        y_L: float = self.spline_left_bnd_pts[0].y
+        y_R: float =self.spline_right_bnd_pts[0].y
         dY: float = (y_R - y_L)/num_ctl_pts
 
         ref_line = Part.makeLine(
@@ -96,48 +108,14 @@ class LighteningHoleBounds:
 
         return upper_spline_pts, lower_spline_pts
 
-    # This really finds the hole edge bounds, subtracting the chamfer radius
-    # from each set of bounds.  So, we find the upper and lower points of the
-    # left and right line-bound, and the right and left bounds for the upper
-    # spline and lower spline
-    # TODO: It might be more intuitive to arrange the spline bounds as left-right
-    #       pairs for the upper and lower splines, rather than the current
-    #       unintuitive arrangement.  In future we might want to gather info that
-    #       way in the first place to keep the algo simple to understand
-    # TODO: we should refactor corner_offset to chamfer_radius
-    
-    def get_chamfer_corners(self, corner_offset: float = 2) -> List[App.Vector]:
+    def get_hole_side_coords(self, pts: List[App.Vector], chamfer_radius: float) -> List[App.Vector]:
         """
-        
+        Get coordinates for the lines that form the left and right side of the
+        lightening hole, leaving space for the chamfer radius on each end of the
+        line.  If the line would be shorter than 2 chamfer radii, return the
+        midpoint instead
         """
-        # Get reference points on the left and right boundary line
-        self.left_bnd_pts = self.get_intersections(self.left_bound)
-        self.right_bnd_pts = self.get_intersections(self.right_bound)
-
-
-        # TODO: We should move this off someplace else to whatever point we
-        #       start creating the hole's edge geometry, since we're essentially
-        #       creating the bspline bounds here, but not the correspond left
-        #       and right edge bounds
-        # create lines that are offset from the left and right, locate where they
-        # intersect with the top and bottom curve, these will join with the top
-        # bspline for the interior contour
-        left_chamfer_ref: Part.Line = self.left_bound.copy()
-        left_chamfer_ref.translate(App.Vector(0.0,corner_offset,0.0))
-        self.left_chamfer_pts = self.get_intersections(left_chamfer_ref)
-
-        right_chamfer_ref: Part.Line = self.right_bound.copy()
-        right_chamfer_ref.translate(App.Vector(0.0,-corner_offset,0.0))
-        self.right_chamfer_pts = self.get_intersections(right_chamfer_ref)
-
-    def get_chamfer_line_pts(self, pts: List[App.Vector], offset_mm: float) -> List[App.Vector]:
-        """
-        Find points on the left and right bounding lines that are backed from
-        the intersection with the top and bottom part of the interior profile a
-        fixed distance.  If the line so formed would be of zero length, return a
-        single point midway between the intersection points
-        """
-        chm_pts: List[App.Vector] = []
+        line_coord_pts: List[App.Vector] = []
         # locate points on the left and right lines that intersect the contours
         # then back up and down using the offset dimension from each side
         p1 = pts[0]
@@ -145,21 +123,21 @@ class LighteningHoleBounds:
 
         # ensure the distance between p1 and p2 is long enough to fit a non-zero
         # line segment between the chamfer reference points
-        if p1.distanceToPoint(p2) > 2* offset_mm:
+        if p1.distanceToPoint(p2) > 2* chamfer_radius:
             b1 = App.Vector(p1)
             b2 = App.Vector(p2)
-            b1.z = b1.z - offset_mm
-            b2.z = b2.z + offset_mm
-            chm_pts = [b1,b2]
+            b1.z = b1.z - chamfer_radius
+            b2.z = b2.z + chamfer_radius
+            line_coord_pts = [b1,b2]
         # if the distance between p1 and p2 is below the min threshold for the
         # chamfer offset, then just provide a single point midway between p1 and p2
         else:
             b1 = (p1 + p2)/2
-            chm_pts = [b1]
+            line_coord_pts = [b1]
 
-        chm_pts.sort(key=lambda pt: pt.z, reverse=True)
+        line_coord_pts.sort(key=lambda pt: pt.z, reverse=True)
 
-        return chm_pts
+        return line_coord_pts
 
 
     def show(self) -> None:
@@ -185,30 +163,23 @@ class LighteningHoleBounds:
         right_f.ViewObject.LineColor = BLUE(0.5)
         grp.addObject(right_f)
 
-        # TODO: maybe rename these left boundary corners and right boundary
-        #       corners
-        draw_points(self.left_bnd_pts, grp, RED(1.0))
-        draw_points(self.right_bnd_pts, grp, RED(1.0))
+        draw_points(self.left_corner_pts, grp, RED(1.0))
+        draw_points(self.right_corner_pts, grp, RED(1.0))
 
-        # TODO: these are the right and left bounds for the spline profile
-        #       parts.  I have a feeling we can build this into the part where
-        #       calculate the splines, and eliminate this member entirely
-        # draw_points(self.left_chamfer_pts, grp)
-        # draw_points(self.right_chamfer_pts, grp)
-
-        # TODO: these are the endpoints for the left and right hole line; we
-        #       should just rename them to that
-        draw_points(self.left_l_chamfer_pts, grp, TEAL(1.0))
-        draw_points(self.right_l_chamfer_pts, grp, TEAL(1.0))
+        draw_points(self.left_line_pts, grp, TEAL(1.0))
+        draw_points(self.right_line_pts, grp, TEAL(1.0))
 
         draw_points(self.upper_spline_pts, grp, TEAL(1.0))
         draw_points(self.lower_spline_pts, grp, TEAL(1.0))
 
         App.ActiveDocument.recompute()
         
-    # find the points on a line that intersect the top and bottom of the airfoil
-    # inner contour
     def get_intersections(self, bound_line: Part.Line) -> List[App.Vector]:
+        """
+        Find the points on a line that intersect the top and bottom of the
+        airfoil inner contour.  The points will be returned in sorted order so
+        that the upper contour point is first, and lower contour point is last
+        """
         intersections: List[App.Vector] = []
 
         edge: Part.Edge
@@ -288,7 +259,6 @@ def generate_hole_bounds(
     #       zero, but, basically, we ought to be able to compensate for this,
     #       since we can detect it when we generate the bound list
     def generate_bounds(interval: Interval) -> List[LighteningHoleBounds]:
- 
         num_segments: int = math.ceil(interval.length()/max_hole_width)
         segment_length: float = interval.length()/num_segments
   
@@ -511,13 +481,13 @@ def create_lightening_hole_sketch(
             sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_bottom, btm_arc_other_id, line_id, 2))
 
     for bnd in bnds:
-        left_line_id, left_line = draw_line(bnd.left_l_chamfer_pts)
-        right_line_id, right_line = draw_line(bnd.right_l_chamfer_pts)
+        left_line_id, left_line = draw_line(bnd.left_line_pts)
+        right_line_id, right_line = draw_line(bnd.right_line_pts)
         upper_bsp_id, upper_bsp = draw_spline(bnd.upper_spline_pts)
         lower_bsp_id, lower_bsp = draw_spline(bnd.lower_spline_pts)
 
-        draw_chamfers(bnd.left_chamfer_pts, left_line, left_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.LEFT)
-        draw_chamfers(bnd.right_chamfer_pts, right_line, right_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.RIGHT)
+        draw_chamfers(bnd.spline_left_bnd_pts, left_line, left_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.LEFT)
+        draw_chamfers(bnd.spline_right_bnd_pts, right_line, right_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.RIGHT)
 
     return sk
 
