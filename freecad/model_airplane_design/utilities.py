@@ -7,10 +7,37 @@ import numpy
 from enum import Enum
 from typing import List
 
+# Helper methods, used throughout
+def create_group(name: str, doc: App.Document = App.ActiveDocument) -> App.DocumentObjectGroup:
+    return doc.addObject("App::DocumentObjectGroup", name)
+
+def TEAL(level: float) -> tuple:
+    level = numpy.clip(level, 0.1, 1.0)
+    return (0.0, level, level)
+
+def BLACK() -> tuple:
+    return (0.0, 0.0, 0.0)
+
+def GREY(grey: float = 0.5):
+    return (grey, grey, grey)
+
+def RED(red: float = 1.0) -> tuple:
+    return (red, 0.0, 0.0)
+
+def GREEN(green: float = 1.0) -> tuple:
+    return (0.0, green, 0.0)
+
+def BLUE(blue: float = 1.0) -> tuple:
+    return (0.0, 0.0, blue)
+
 class LighteningHoleBounds:
-    def __init__(self, airfoil_shape: Part.Shape, left: Part.Line, right: Part.Line):
-        self.left = left
-        self.right = right
+    """
+    Stores a set of boundaries and control points to generate lightening holes
+    for an airfoil
+    """
+    def __init__(self, airfoil_shape: Part.Shape, left_bound: Part.Line, right_bound: Part.Line):
+        self.left_bound = left_bound
+        self.right_bound = right_bound
         self.airfoil_shape = airfoil_shape
 
         # TODO: improve and document these names before I forget what they all
@@ -39,7 +66,10 @@ class LighteningHoleBounds:
         self.right_l_chamfer_pts = self.get_chamfer_line_pts(self.right_bnd_pts, self.offset)
 
     def get_spline_control_pts(self, num_ctl_pts: int = 5) -> tuple[List[App.Vector], List[App.Vector]]:
-        
+        """
+        Gets spline control points to draw a lightening hole on the upper and
+        lower parts of the inner profile
+        """
         upper_spline_pts: List[App.Vector] = []
         lower_spline_pts: List[App.Vector] = []
 
@@ -50,8 +80,8 @@ class LighteningHoleBounds:
         dY: float = (y_R - y_L)/num_ctl_pts
 
         ref_line = Part.makeLine(
-            App.Vector(0.0, y_L, self.left.Vertexes[0].Point.z), 
-            App.Vector(0.0, y_L, self.left.Vertexes[1].Point.z)
+            App.Vector(0.0, y_L, self.left_bound.Vertexes[0].Point.z), 
+            App.Vector(0.0, y_L, self.left_bound.Vertexes[1].Point.z)
             )
 
         for idx in range(0, num_ctl_pts+1):
@@ -66,26 +96,47 @@ class LighteningHoleBounds:
 
         return upper_spline_pts, lower_spline_pts
 
-    # locate the points that will be used to form the chamfer coordinate
-    def get_chamfer_corners(self, corner_offset_mm: float = 2) -> List[App.Vector]:
-
+    # This really finds the hole edge bounds, subtracting the chamfer radius
+    # from each set of bounds.  So, we find the upper and lower points of the
+    # left and right line-bound, and the right and left bounds for the upper
+    # spline and lower spline
+    # TODO: It might be more intuitive to arrange the spline bounds as left-right
+    #       pairs for the upper and lower splines, rather than the current
+    #       unintuitive arrangement.  In future we might want to gather info that
+    #       way in the first place to keep the algo simple to understand
+    # TODO: we should refactor corner_offset to chamfer_radius
+    
+    def get_chamfer_corners(self, corner_offset: float = 2) -> List[App.Vector]:
+        """
+        
+        """
         # Get reference points on the left and right boundary line
-        self.left_bnd_pts = self.get_intersections(self.left)
-        self.right_bnd_pts = self.get_intersections(self.right)
+        self.left_bnd_pts = self.get_intersections(self.left_bound)
+        self.right_bnd_pts = self.get_intersections(self.right_bound)
 
+
+        # TODO: We should move this off someplace else to whatever point we
+        #       start creating the hole's edge geometry, since we're essentially
+        #       creating the bspline bounds here, but not the correspond left
+        #       and right edge bounds
         # create lines that are offset from the left and right, locate where they
         # intersect with the top and bottom curve, these will join with the top
         # bspline for the interior contour
-        left_chamfer_ref: Part.Line = self.left.copy()
-        left_chamfer_ref.translate(App.Vector(0.0,corner_offset_mm,0.0))
+        left_chamfer_ref: Part.Line = self.left_bound.copy()
+        left_chamfer_ref.translate(App.Vector(0.0,corner_offset,0.0))
         self.left_chamfer_pts = self.get_intersections(left_chamfer_ref)
 
-        right_chamfer_ref: Part.Line = self.right.copy()
-        right_chamfer_ref.translate(App.Vector(0.0,-corner_offset_mm,0.0))
+        right_chamfer_ref: Part.Line = self.right_bound.copy()
+        right_chamfer_ref.translate(App.Vector(0.0,-corner_offset,0.0))
         self.right_chamfer_pts = self.get_intersections(right_chamfer_ref)
 
     def get_chamfer_line_pts(self, pts: List[App.Vector], offset_mm: float) -> List[App.Vector]:
-
+        """
+        Find points on the left and right bounding lines that are backed from
+        the intersection with the top and bottom part of the interior profile a
+        fixed distance.  If the line so formed would be of zero length, return a
+        single point midway between the intersection points
+        """
         chm_pts: List[App.Vector] = []
         # locate points on the left and right lines that intersect the contours
         # then back up and down using the offset dimension from each side
@@ -111,36 +162,47 @@ class LighteningHoleBounds:
         return chm_pts
 
 
-    def draw_points(self, pts: List[App.Vector], grp: App.DocumentObjectGroup, color: tuple = (0.0, 0.5, 0.0)) -> None:
-        for pt in pts:
-            pf = Draft.make_point(pt)
-            pf.ViewObject.PointColor = color
-            pf.ViewObject.PointSize = 10.0
-            grp.addObject(pf)
-
     def show(self) -> None:
+        """
+        Draws the hole boundary lines and all control points generated that are
+        used to create the lightening hole geometry
+        """
+        def draw_points(pts: List[App.Vector], grp: App.DocumentObjectGroup, color: tuple = (0.0, 0.5, 0.0)) -> None:
+
+            for pt in pts:
+                pf = Draft.make_point(pt)
+                pf.ViewObject.PointColor = color
+                pf.ViewObject.PointSize = 10.0
+                grp.addObject(pf)
 
         grp: App.DocumentObjectGroup = create_group("lhb-viz")
 
-        left_f = Part.show(self.left)
+        left_f = Part.show(self.left_bound)
         left_f.ViewObject.LineColor = BLUE(0.5)
         grp.addObject(left_f)
 
-        right_f = Part.show(self.right)
+        right_f = Part.show(self.right_bound)
         right_f.ViewObject.LineColor = BLUE(0.5)
         grp.addObject(right_f)
 
-        self.draw_points(self.left_bnd_pts, grp)
-        self.draw_points(self.right_bnd_pts, grp)
+        # TODO: maybe rename these left boundary corners and right boundary
+        #       corners
+        draw_points(self.left_bnd_pts, grp, RED(1.0))
+        draw_points(self.right_bnd_pts, grp, RED(1.0))
 
-        self.draw_points(self.left_chamfer_pts, grp)
-        self.draw_points(self.right_chamfer_pts, grp)
+        # TODO: these are the right and left bounds for the spline profile
+        #       parts.  I have a feeling we can build this into the part where
+        #       calculate the splines, and eliminate this member entirely
+        # draw_points(self.left_chamfer_pts, grp)
+        # draw_points(self.right_chamfer_pts, grp)
 
-        self.draw_points(self.left_l_chamfer_pts, grp, TEAL(1.0))
-        self.draw_points(self.right_l_chamfer_pts, grp, TEAL(1.0))
+        # TODO: these are the endpoints for the left and right hole line; we
+        #       should just rename them to that
+        draw_points(self.left_l_chamfer_pts, grp, TEAL(1.0))
+        draw_points(self.right_l_chamfer_pts, grp, TEAL(1.0))
 
-        self.draw_points(self.upper_spline_pts, grp, TEAL(1.0))
-        self.draw_points(self.lower_spline_pts, grp, TEAL(1.0))
+        draw_points(self.upper_spline_pts, grp, TEAL(1.0))
+        draw_points(self.lower_spline_pts, grp, TEAL(1.0))
 
         App.ActiveDocument.recompute()
         
@@ -166,29 +228,11 @@ class LighteningHoleBounds:
 
         return intersections                        
 
-def create_group(name: str, doc: App.Document = App.ActiveDocument) -> App.DocumentObjectGroup:
-    return doc.addObject("App::DocumentObjectGroup", name)
-
-def TEAL(level: float) -> tuple:
-    level = numpy.clip(level, 0.1, 1.0)
-    return (0.0, level, level)
-
-def BLACK() -> tuple:
-    return (0.0, 0.0, 0.0)
-
-def GREY(grey: float = 0.5):
-    return (grey, grey, grey)
-
-def RED(red: float = 1.0) -> tuple:
-    return (red, 0.0, 0.0)
-
-def GREEN(green: float = 1.0) -> tuple:
-    return (0.0, green, 0.0)
-
-def BLUE(blue: float = 1.0) -> tuple:
-    return (0.0, 0.0, blue)
-
 class Interval:
+    """
+    Stores starting and ending interval values used to compute lightening hole
+    placement
+    """
     start: float
     end: float
     def __init__(self, start: float = 0.0, end: float = 0.0):
@@ -196,6 +240,9 @@ class Interval:
         self.end = end
 
     def length(self) -> float:
+        """
+        Provides the length of the interval
+        """
         return self.end-self.start
 
     def __str__(self):
@@ -207,8 +254,11 @@ def generate_hole_bounds(
     profile_offset: float = 2.0, 
     wall_thickness: float = 2.0,
     target_num_holes: int = 6
-):
-    
+) -> List[LighteningHoleBounds]:
+    """
+    Generates a set of lightening hole bound objects, ensuring that such bounds
+    do not intersect a set of interferences
+    """
     # create the interior hole profile using an offset
     af_inner_profile = airfoil_sk.Shape.makeOffset2D(-profile_offset, join=2)
 
@@ -283,8 +333,12 @@ def generate_hole_bounds(
 def create_lightening_hole_sketch(
     airfoil_sk: Sketcher.Sketch,
     interferences: List[Sketcher.Sketch] = []
-):
-
+) -> Sketcher.Sketch:
+    """
+    Creates a sketch which contains geometry for a set of lightening holes for
+    an airfoil.  A set of interferences may be provided, which represent areas
+    withing the airfoil section where lightening holes should not be generated
+    """
     bnds: List[LighteningHoleBounds] = \
             generate_hole_bounds(
                 airfoil_sk,
@@ -343,7 +397,10 @@ def create_lightening_hole_sketch(
             upper_bsp: Part.BSplineCurve, upper_bsp_id: int,
             lower_bsp: Part.BSplineCurve, lower_bsp_id: int,
             chamfer_side: ChamferSide) -> None:
-        
+        """
+        Draw circular arcs that join a side boundary line with one of the bspline
+        interior boundary sections
+        """
         ch_pts: List[App.Vector] = [inv_placement.multVec(pt) for pt in chamfer_pts]
               
 
@@ -462,7 +519,9 @@ def create_lightening_hole_sketch(
         draw_chamfers(bnd.left_chamfer_pts, left_line, left_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.LEFT)
         draw_chamfers(bnd.right_chamfer_pts, right_line, right_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.RIGHT)
 
-    App.ActiveDocument.recompute()
+    return sk
+
+
 
     
             
