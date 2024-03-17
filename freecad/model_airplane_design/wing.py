@@ -1,73 +1,100 @@
 import FreeCAD as App
 import Part
 import Sketcher
-from typing import List
+from typing import Tuple
 
-# def create(obj_name: str, root_airfoil: Sketcher.Sketch):
-def create(obj_name: str):
+def create(
+    obj_name: str, 
+    root_airfoil: Sketcher.Sketch,
+    planform: Sketcher.Sketch,
+    path: Sketcher.Sketch,
+    num_sections: int = 5
+):    
 
-    fp_obj = App.ActiveDocument.addObject("Part::FeaturePython", obj_name)
-    # Wing(fp_obj, root_airfoil)
-    Wing(fp_obj)
-    WingViewProvider(fp_obj.ViewObject)
+    obj: App.DocumentObject = App.ActiveDocument.addObject(
+        "Part::FeaturePython",
+        obj_name
+    )
+
+    Wing(obj, root_airfoil, planform, path, num_sections),
+    WingViewProvider(obj.ViewObject),
 
     App.ActiveDocument.recompute()
-
-
-    return fp_obj
+    return obj
 
 
 class Wing():
-    # def __init__(self, fp_obj, root_airfoil: Sketcher.Sketch) -> None:
-    def __init__(self, fp_obj):
-        self.Type = 'Wing'
-        fp_obj.Proxy = self
 
-        fp_obj.addExtension("Part::AttachExtensionPython")
+    def __init__(
+            self, 
+            obj: App.DocumentObject,
+            root_airfoil: Sketcher.Sketch,
+            planform: Sketcher.Sketch,
+            path: Sketcher.Sketch,
+            num_sections: int = 5
+        ) -> None:
 
-        fp_obj.addProperty(
+        self.attach(obj)
+
+        obj.addProperty(
             "App::PropertyLink", 
             "root_airfoil", 
             "Wing", 
             "The airfoil to use for the wing root"
-        ).root_airfoil = None
+        ).root_airfoil = root_airfoil
+        obj.addObject(obj.root_airfoil)
 
-    def onChanged(self, fp_obj, property: str) -> None:
-        print("-- onChanged")
-        print("     property = " + property)
+        obj.addProperty(
+            "App::PropertyLink",
+            "planform",
+            "Wing",
+            "A sketch of the wing planform"
+        ).planform = planform
+        obj.addObject(obj.planform)
 
-    def execute(self, fp_obj) -> None:
+        obj.addProperty(
+            "App::PropertyLink",
+            "path",
+            "Wing",
+            "A sketch giving the wing extent through the planform"
+        ).path = path
+        obj.addObject(obj.path)
+
+        obj.addProperty(
+            "App::PropertyQuantity",
+            "num_sections",
+            "Wing",
+            "The number of wing sections to generate along the path"
+        ).num_sections = num_sections
+
+    def onChanged(self, obj: App.DocumentObject, property: str) -> None:
+        pass
+
+    def attach(self, obj: App.DocumentObject) -> None:
+        obj.addExtension("App::OriginGroupExtensionPython")
+        obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
+
+    def execute(self, obj: App.DocumentObject) -> None:
         print("execute")
 
 class WingViewProvider():
-    def __init__(self, fp_view_obj: App.Gui.ViewProvider) -> None:
-        fp_view_obj.Proxy = self
-        self.Object = fp_view_obj.Object
+    def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
+        vobj.Proxy = self
+        self.Object = vobj.Object
+        self.attach(vobj)
 
-    def getIcon(self):
+    def getIcon(self) -> str:
         return None
     
-    def attach(self, fp_obj):
-        self.Object = fp_obj
-        self.onChanged(fp_obj, "root_airfoil")
-
-    def claimChildren(self):
-
-        return [self.Object.root_airfoil]
-    
-    def onDelete(self, feature, subelements):
-        print("--- onDelete ---")
-        print(type(feature))
-        print(type(subelements))
+    def attach(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
+        vobj.addExtension("Gui::ViewProviderOriginGroupExtensionPython")
+        vobj.Proxy = self
+        self.Object = vobj.Object
+        self.ViewObject = vobj
+        
+    def onDelete(self, vobj: App.Gui.ViewProviderDocumentObject, subelements: Tuple[str]) -> bool:
         return True
     
-    def onChanged(self, fp_obj, prop):
-        
+    def onChanged(self, vobj: App.Gui.ViewProviderDocumentObject, prop: str) -> None:
         pass
-
-    def __get_state__(self):
-        return None
-
-    def __set_state__(self, state):
-        return None
     
