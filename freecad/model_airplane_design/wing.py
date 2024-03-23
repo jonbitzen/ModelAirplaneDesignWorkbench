@@ -1,7 +1,10 @@
+import Draft
 import FreeCAD as App
+import numpy
 import Part
 import Sketcher
 from typing import Tuple
+from typing import List
 
 def create(
     obj_name: str, 
@@ -67,15 +70,42 @@ class Wing():
             "The number of wing sections to generate along the path"
         ).num_sections = num_sections
 
+        num_sections: int = int(obj.num_sections)
+        
+        path_shape: Part.Shape = obj.path.Shape
+
+        edge_list: List[Part.Edge] = path_shape.Edges
+
+        e: Part.Edge = edge_list[0]
+
+        path_len = e.Length
+
+        for u in numpy.linspace(0.0, path_len, num_sections):
+            pt: App.Vector = e.valueAt(u)
+
+            next_af: Sketcher.SketchObject = App.ActiveDocument.copyObject(root_airfoil)
+            next_af.Placement.Base = root_airfoil.Shape.Placement.Base + pt - path_shape.Placement.Base
+            obj.addObject(next_af)
+
+        # Add this last, or chaos ensues
+        obj.Proxy = self
+
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
-        pass
+        property_list: List[str] = ["root_airfoil", "planform", "path", "num_sections"]
+
+        for prop in property_list:
+            if not hasattr(obj, prop):
+                return
+
+        if property in property_list:
+            self.execute(obj)
 
     def attach(self, obj: App.DocumentObject) -> None:
         obj.addExtension("App::OriginGroupExtensionPython")
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def execute(self, obj: App.DocumentObject) -> None:
-        print("execute")
+        print("Wing.execute")
 
 class WingViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
