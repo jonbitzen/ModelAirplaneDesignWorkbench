@@ -263,6 +263,7 @@ def generate_hole_bounds(
         segment_length: float = interval.length()/num_segments
   
         ref_lines: List[Part.Edge] = []
+        # TODO: replace with linspace
         for y_coord in numpy.arange(interval.start, interval.end + segment_length, segment_length):
             top_pt = (0, y_coord, bbox.ZMax + 1)
             bottom_pt = (0, y_coord, bbox.ZMin - 1)
