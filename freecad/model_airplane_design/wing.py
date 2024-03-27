@@ -1,5 +1,6 @@
-import Draft
+# from color import *
 import FreeCAD as App
+import math
 import numpy
 import Part
 import Sketcher
@@ -27,10 +28,10 @@ def create(
 
 class RibPose():
     position: App.Vector
-    normal: App.Vector
-    def __init__(self, position: App.Vector, normal: App.Vector) -> None:
+    direction: App.Vector
+    def __init__(self, position: App.Vector, direction: App.Vector) -> None:
         self.position = position
-        self.normal = normal
+        self.direction = direction
 
 class PathInterval():
     start: float
@@ -142,11 +143,43 @@ class Wing():
 
         self.path_helper = PathHelper(path.Shape.Edges)
 
+        # TODO: this wants to be encasulated somewhere
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
-
         for pose in rib_poses:
             next_af: Sketcher.SketchObject = App.ActiveDocument.copyObject(root_airfoil)
-            next_af.Placement.Base = pose.position
+
+            # store off the original placement - we need it to get back into the original plane later
+            orig_placement = next_af.Placement.Base
+            orig_axis = next_af.Placement.Rotation.Axis
+            orig_angle = math.degrees(next_af.Placement.Rotation.Angle)
+
+            # clear the placement, so we can rotate the rib section properly
+            next_af.Placement.Base = App.Vector(0,0,0)
+            next_af.Placement.Rotation.Axis = App.Vector(0,0,0)
+            next_af.Placement.Rotation.Angle = 0
+
+            # get the angle needed to rotate a rib section so its normal aligns with the path tangent
+            root_norm = App.Vector(-1,0,0)
+            dir: App.Vector = pose.direction.normalize()
+            rot_axis: App.Vector = root_norm.cross(dir).normalize()
+            angle: float = math.degrees(root_norm.getAngle(dir))
+
+            # rotate the rib section into the path tangent
+            next_af.Placement.rotate(
+                next_af.Shape.BoundBox.Center,
+                rot_axis,
+                angle
+            )
+
+            # rotate once more to get the rib section back into its original frame
+            next_af.Placement.rotate(
+                App.Vector(0,0,0),
+                orig_axis,
+                orig_angle
+            )
+
+            # locate the rib in the appropriate place along the path
+            next_af.Placement.Base = pose.position + orig_placement
             obj.addObject(next_af)
         
         # Add this last, or chaos ensues
