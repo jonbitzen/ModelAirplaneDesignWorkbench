@@ -25,8 +25,78 @@ def create(
     App.ActiveDocument.recompute()
     return obj
 
+class RibPose():
+    position: App.Vector
+    normal: App.Vector
+    def __init__(self, position: App.Vector, normal: App.Vector) -> None:
+        self.position = position
+        self.normal = normal
 
+class PathInterval():
+    start: float
+    end: float
+    offset: float
+    edge: Part.Edge
+
+    def __init__(self, offset: float, edge: Part.Edge) -> None:
+        self.edge = edge
+        self.offset = offset
+        # TODO: is there a universe where FirstParameter isn't zero, if so
+        #       there is a discontinuity to cope with
+        self.start = edge.FirstParameter + offset
+        self.end = edge.LastParameter + offset
+
+    def contains(self, location: float):
+        return location >= self.start and location <= self.end
+
+    def get_pose_at(self, location: float):
+        if not self.contains(location):
+            return None
+        loc: float = location - self.offset
+        pos: App.Vector = self.edge.valueAt(loc)
+        tan: App.Vector = self.edge.tangentAt(loc)
+        return RibPose(pos, tan)
+
+class PathHelper():
+    path: List[PathInterval] = []
+    length: float = 0
+    def __init__(self, path: List[Part.Edge]) -> None:
+
+        origin: App.Vector = App.Vector(0,0,0)
+        path.sort(key=lambda edge: edge.valueAt(edge.FirstParameter).distanceToPoint(origin))
+
+        self.length = 0
+        for edge in path:
+            path_segment = \
+                PathInterval(
+                    self.length,
+                    edge
+                )
+
+            self.path.append(path_segment)
+            self.length += edge.Length
+
+    def get_rib_poses(self, num_poses: int):
+        pose_list: List[RibPose] = []
+        for edge_dist in numpy.linspace(0.0, self.length, num_poses):
+            pose_generated: bool = False
+            for edge_int in self.path:
+                
+                rib_pose: RibPose = edge_int.get_pose_at(edge_dist)
+                if rib_pose is not None:
+                    pose_list.append(rib_pose)
+                    pose_generated = True
+                    continue
+
+            if not pose_generated:
+                print("PathHelper.get_rib_poses: failed to generate pose at " +  str(edge_dist))
+        return pose_list                    
+            
+            
+            
 class Wing():
+
+    path_helper: PathHelper
 
     def __init__(
             self, 
@@ -70,23 +140,15 @@ class Wing():
             "The number of wing sections to generate along the path"
         ).num_sections = num_sections
 
-        num_sections: int = int(obj.num_sections)
-        
-        path_shape: Part.Shape = obj.path.Shape
+        self.path_helper = PathHelper(path.Shape.Edges)
 
-        edge_list: List[Part.Edge] = path_shape.Edges
+        rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
 
-        e: Part.Edge = edge_list[0]
-
-        path_len = e.Length
-
-        for u in numpy.linspace(0.0, path_len, num_sections):
-            pt: App.Vector = e.valueAt(u)
-
+        for pose in rib_poses:
             next_af: Sketcher.SketchObject = App.ActiveDocument.copyObject(root_airfoil)
-            next_af.Placement.Base = root_airfoil.Shape.Placement.Base + pt - path_shape.Placement.Base
+            next_af.Placement.Base = pose.position
             obj.addObject(next_af)
-
+        
         # Add this last, or chaos ensues
         obj.Proxy = self
 
