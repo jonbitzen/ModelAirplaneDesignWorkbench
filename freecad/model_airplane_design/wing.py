@@ -1,4 +1,5 @@
 # from color import *
+import Draft
 import FreeCAD as App
 import math
 import numpy
@@ -146,8 +147,9 @@ class Wing():
         # TODO: this wants to be encasulated somewhere
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
         for pose in rib_poses:
-            next_af: Sketcher.SketchObject = App.ActiveDocument.copyObject(root_airfoil)
-
+            af_shape: Part.Shape = root_airfoil.Shape.copy()
+            next_af: Sketcher.SketchObject = Draft.make_sketch(af_shape, True)
+            
             # store off the original placement - we need it to get back into the original plane later
             orig_placement = next_af.Placement.Base
             orig_axis = next_af.Placement.Rotation.Axis
