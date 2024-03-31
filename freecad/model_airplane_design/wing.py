@@ -144,13 +144,36 @@ class Wing():
 
         self.path_helper = PathHelper(path.Shape.Edges)
 
-        # TODO: this wants to be encasulated somewhere
+        # TODO: this wants to be encapsulated somewhere
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
         for pose in rib_poses:
+            
+            # get the angle needed to rotate a rib section so its normal aligns
+            # with the path tangent
+            root_norm = App.Vector(-1,0,0)
+            wp_tangent: App.Vector = pose.direction.normalize()
+            rot_axis: App.Vector = root_norm.cross(wp_tangent).normalize()
+            angle: float = math.degrees(root_norm.getAngle(wp_tangent))
+
+            # get the scale factor and position offset to apply to the rib section
+            # that keeps it inside the planform bounds at this position
+            pf_dist, min_y = \
+                self.__get_planform_dist(
+                    planform.Shape.Edges,
+                    pose.position, 
+                    root_norm
+                )
+
+            base_dist = root_airfoil.Shape.BoundBox.YLength
+
+            scale_factor = pf_dist/base_dist
+
             af_shape: Part.Shape = root_airfoil.Shape.copy()
+            af_shape.scale(scale_factor)
             next_af: Sketcher.SketchObject = Draft.make_sketch(af_shape, True)
             
-            # store off the original placement - we need it to get back into the original plane later
+            # store off the original placement - we need it to get back into the
+            # original plane later
             orig_placement = next_af.Placement.Base
             orig_axis = next_af.Placement.Rotation.Axis
             orig_angle = math.degrees(next_af.Placement.Rotation.Angle)
@@ -159,12 +182,6 @@ class Wing():
             next_af.Placement.Base = App.Vector(0,0,0)
             next_af.Placement.Rotation.Axis = App.Vector(0,0,0)
             next_af.Placement.Rotation.Angle = 0
-
-            # get the angle needed to rotate a rib section so its normal aligns with the path tangent
-            root_norm = App.Vector(-1,0,0)
-            dir: App.Vector = pose.direction.normalize()
-            rot_axis: App.Vector = root_norm.cross(dir).normalize()
-            angle: float = math.degrees(root_norm.getAngle(dir))
 
             # rotate the rib section into the path tangent
             next_af.Placement.rotate(
@@ -182,10 +199,52 @@ class Wing():
 
             # locate the rib in the appropriate place along the path
             next_af.Placement.Base = pose.position + orig_placement
+
+            # adjust the placement Y coordinate to keep the airfoil inside the
+            # wing planform
+            next_af.Placement.Base.y += min_y - root_airfoil.Shape.BoundBox.YMin * scale_factor
+
             obj.addObject(next_af)
         
         # Add this last, or chaos ensues
         obj.Proxy = self
+
+    def __get_planform_dist(
+            self, 
+            pf_edges: List[Part.Edge], 
+            position: App.Vector, 
+            direction: App.Vector
+        ) -> Tuple[float, float]:
+        pf_edges = Part.__sortEdges__(pf_edges)
+        plane = Part.Plane(position, direction)
+
+        # the plane should intersect the wing planform in two places
+        pf_intersections: List[Part.Vertex] = []
+
+        for edge in pf_edges:
+
+            trimmed_curve: Part.Curve = edge.Curve
+            trimmed_curve = trimmed_curve.trim(*edge.ParameterRange)
+
+            intersections = plane.intersect(trimmed_curve)
+            # if there are no intersections, skip the rest of the loop
+            if intersections is None:
+                continue
+            
+            p: Part.Point
+            for p in intersections[0]:
+                pf_intersections.append(Part.Vertex(p))
+
+            # if we have found the needed planform intersections, we're done
+            if len(pf_intersections) == 2:
+                p0: Part.Vertex = pf_intersections[0]
+                p1: Part.Vertex = pf_intersections[1]
+                dist_t = p0.distToShape(p1)
+                dist = dist_t[0]
+                return dist, min(p0.Y, p1.Y)
+        
+        print("Wing.__get_planform_dist - no intersections to planform found at position = " + str(position))
+        return None
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         property_list: List[str] = ["root_airfoil", "planform", "path", "num_sections"]
