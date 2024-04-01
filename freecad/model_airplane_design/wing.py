@@ -7,6 +7,7 @@ import Part
 import Sketcher
 from typing import Tuple
 from typing import List
+from . import utilities
 
 def create(
     obj_name: str, 
@@ -144,6 +145,12 @@ class Wing():
 
         self.path_helper = PathHelper(path.Shape.Edges)
 
+        xy_placement = App.Placement(
+            App.Vector(0,0,0),
+            App.Vector(0,0,0),
+            0
+        )
+
         # TODO: this wants to be encapsulated somewhere
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
         for pose in rib_poses:
@@ -168,10 +175,16 @@ class Wing():
 
             scale_factor = pf_dist/base_dist
 
+            ra_orig_placement = root_airfoil.Placement
+            root_airfoil.Placement = xy_placement
             af_shape: Part.Shape = root_airfoil.Shape.copy()
             af_shape.scale(scale_factor)
             next_af: Sketcher.SketchObject = Draft.make_sketch(af_shape, True)
             
+            root_airfoil.Placement = ra_orig_placement
+
+            next_af.Placement = ra_orig_placement
+
             # store off the original placement - we need it to get back into the
             # original plane later
             orig_placement = next_af.Placement.Base
@@ -179,9 +192,7 @@ class Wing():
             orig_angle = math.degrees(next_af.Placement.Rotation.Angle)
 
             # clear the placement, so we can rotate the rib section properly
-            next_af.Placement.Base = App.Vector(0,0,0)
-            next_af.Placement.Rotation.Axis = App.Vector(0,0,0)
-            next_af.Placement.Rotation.Angle = 0
+            next_af.Placement = xy_placement
 
             # rotate the rib section into the path tangent
             next_af.Placement.rotate(
@@ -204,8 +215,13 @@ class Wing():
             # wing planform
             next_af.Placement.Base.y += min_y - root_airfoil.Shape.BoundBox.YMin * scale_factor
 
+            next_af.recompute()
+
+            lh_sk = utilities.create_lightening_hole_sketch(next_af, [])
+
             obj.addObject(next_af)
-        
+            obj.addObject(lh_sk)
+
         # Add this last, or chaos ensues
         obj.Proxy = self
 
