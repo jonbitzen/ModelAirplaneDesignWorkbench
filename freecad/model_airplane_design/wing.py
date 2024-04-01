@@ -159,7 +159,9 @@ class Wing():
             # with the path tangent
             root_norm = App.Vector(-1,0,0)
             wp_tangent: App.Vector = pose.direction.normalize()
-            rot_axis: App.Vector = root_norm.cross(wp_tangent).normalize()
+            rot_axis: App.Vector = root_norm.cross(wp_tangent)
+            if rot_axis.Length != 0:
+                rot_axis = rot_axis.normalize()
             angle: float = math.degrees(root_norm.getAngle(wp_tangent))
 
             # get the scale factor and position offset to apply to the rib section
