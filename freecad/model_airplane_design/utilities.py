@@ -310,6 +310,15 @@ def create_lightening_hole_sketch(
     an airfoil.  A set of interferences may be provided, which represent areas
     withing the airfoil section where lightening holes should not be generated
     """
+    # generate a YZ plane placement
+    yz_placement = App.Placement(
+        App.Vector(0.000000, 0.000000, 0.000000), 
+        App.Rotation(0.500000, 0.500000, 0.500000, 0.500000)
+    )
+
+    af_orig_placement = airfoil_sk.Placement
+    airfoil_sk.Placement = yz_placement
+
     bnds: List[LighteningHoleBounds] = \
             generate_hole_bounds(
                 airfoil_sk,
@@ -318,10 +327,7 @@ def create_lightening_hole_sketch(
 
     # create the sketch on the YZ plane
     sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
-    sk.Placement = App.Placement(
-        App.Vector(0.000000, 0.000000, 0.000000), 
-        App.Rotation(0.500000, 0.500000, 0.500000, 0.500000)
-    )
+    sk.Placement = yz_placement    
 
     # we need the placement of the sketch to convert the reference points in
     # global coordinate space into sketch coordinate space
@@ -489,6 +495,9 @@ def create_lightening_hole_sketch(
 
         draw_chamfers(bnd.spline_left_bnd_pts, left_line, left_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.LEFT)
         draw_chamfers(bnd.spline_right_bnd_pts, right_line, right_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.RIGHT)
+
+    airfoil_sk.Placement = af_orig_placement
+    sk.Placement = airfoil_sk.Placement
 
     return sk
 
