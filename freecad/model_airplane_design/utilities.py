@@ -329,6 +329,8 @@ def create_lightening_hole_sketch(
     sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
     sk.Placement = yz_placement    
 
+    constraints: List[Sketcher.Constraint] = []
+
     # we need the placement of the sketch to convert the reference points in
     # global coordinate space into sketch coordinate space
     inv_placement = sk.Placement.inverse()
@@ -339,7 +341,7 @@ def create_lightening_hole_sketch(
             p2 = inv_placement.multVec(pts[1])
             line = Part.LineSegment(p1, p2)
             id = sk.addGeometry(line, False)
-            sk.addConstraint(Sketcher.Constraint("Block", id))
+            constraints.append(Sketcher.Constraint("Block", id))
             return id, line
         return -1, None
 
@@ -349,7 +351,7 @@ def create_lightening_hole_sketch(
         bsp.interpolate(xf_coords)
         
         id = sk.addGeometry(bsp)
-        sk.addConstraint(Sketcher.Constraint("Block", id))
+        constraints.append(Sketcher.Constraint("Block", id))
         return id, bsp
     
     class ChamferSide(Enum):
@@ -424,7 +426,7 @@ def create_lightening_hole_sketch(
             # TODO: We really need to know why the order that we apply the 
             #       constraints matters so much; if you do the arc first, 
             #       everything is rejected as over-constrained 
-            sk.addConstraint(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
+            constraints.append(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
 
             arc_bottom = Part.ArcOfCircle(
                 Part.Circle(
@@ -441,8 +443,8 @@ def create_lightening_hole_sketch(
             arc_pt_id = get_nearest_end_to_pt(p2, arc_bottom)
             bottom_arc_other_id = 1 if arc_pt_id == 2 else 2
 
-            sk.addConstraint(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
-            sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, id_arc_bottom, bottom_arc_other_id))
+            constraints.append(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
+            constraints.append(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, id_arc_bottom, bottom_arc_other_id))
         # we have a line in the middle, so create arcs that join the line on each
         # end to the top and bottom spline sections
         else:
@@ -464,8 +466,8 @@ def create_lightening_hole_sketch(
             arc_pt_id = get_nearest_end_to_pt(ch_pts[0], arc_top)
             top_arc_other_id = 1 if arc_pt_id == 2  else 2
             
-            sk.addConstraint(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
-            sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, line_id, 1))
+            constraints.append(Sketcher.Constraint("Tangent", upper_bsp_id, bsp_pt_id, id_arc_top, arc_pt_id))
+            constraints.append(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, line_id, 1))
 
             btm_arc_ctr = App.Vector(ch_pts[1].x, line.EndPoint.y, 0.0)
 
@@ -484,8 +486,8 @@ def create_lightening_hole_sketch(
             arc_pt_id = get_nearest_end_to_pt(ch_pts[1], arc_bottom)
             btm_arc_other_id = 1 if arc_pt_id == 2  else 2
 
-            sk.addConstraint(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
-            sk.addConstraint(Sketcher.Constraint("Tangent", id_arc_bottom, btm_arc_other_id, line_id, 2))
+            constraints.append(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
+            constraints.append(Sketcher.Constraint("Tangent", id_arc_bottom, btm_arc_other_id, line_id, 2))
 
     for bnd in bnds:
         left_line_id, left_line = draw_line(bnd.left_line_pts)
@@ -495,6 +497,8 @@ def create_lightening_hole_sketch(
 
         draw_chamfers(bnd.spline_left_bnd_pts, left_line, left_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.LEFT)
         draw_chamfers(bnd.spline_right_bnd_pts, right_line, right_line_id, upper_bsp, upper_bsp_id, lower_bsp, lower_bsp_id, ChamferSide.RIGHT)
+
+    sk.addConstraint(constraints)
 
     airfoil_sk.Placement = af_orig_placement
     sk.Placement = airfoil_sk.Placement
