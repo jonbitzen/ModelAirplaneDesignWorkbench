@@ -112,9 +112,67 @@ class Rib():
 
     # so we could give this the root airfoil and a pose, and I think it could
     # encapsulate all the calculations related to 
-    def __init__(self, airfoil: Sketcher.Sketch, structure: Sketcher.Sketch = None) -> None:
-        self.airfoil = airfoil
-        self.structure = structure
+    def __init__(
+            self, 
+            root_airfoil: Sketcher.Sketch,
+            root_norm: App.Vector, 
+            pose: RibPose,
+            pf_dist: float, 
+            min_y: float
+        ) -> None:
+        wp_tangent: App.Vector = pose.direction.normalize()
+        rot_axis: App.Vector = root_norm.cross(wp_tangent)
+        if rot_axis.Length != 0:
+            rot_axis = rot_axis.normalize()
+        angle: float = math.degrees(root_norm.getAngle(wp_tangent))
+
+        base_dist = root_airfoil.Shape.BoundBox.YLength
+
+        scale_factor = pf_dist/base_dist
+
+        ra_orig_placement = root_airfoil.Placement
+        root_airfoil.Placement = utilities.xy_placement
+        af_shape: Part.Shape = root_airfoil.Shape.copy()
+        af_shape.scale(scale_factor)
+        next_af: Sketcher.SketchObject = Draft.make_sketch(af_shape, True)
+        
+        root_airfoil.Placement = ra_orig_placement
+
+        next_af.Placement = ra_orig_placement
+
+        # store off the original placement - we need it to get back into the
+        # original plane later
+        orig_placement = next_af.Placement.Base
+        orig_axis = next_af.Placement.Rotation.Axis
+        orig_angle = math.degrees(next_af.Placement.Rotation.Angle)
+
+        # clear the placement, so we can rotate the rib section properly
+        next_af.Placement = utilities.xy_placement
+
+        # rotate the rib section into the path tangent
+        next_af.Placement.rotate(
+            next_af.Shape.BoundBox.Center,
+            rot_axis,
+            angle
+        )
+
+        # rotate once more to get the rib section back into its original frame
+        next_af.Placement.rotate(
+            App.Vector(0,0,0),
+            orig_axis,
+            orig_angle
+        )
+
+        # locate the rib in the appropriate place along the path
+        next_af.Placement.Base = pose.position + orig_placement
+
+        # adjust the placement Y coordinate to keep the airfoil inside the
+        # wing planform
+        next_af.Placement.Base.y += min_y - root_airfoil.Shape.BoundBox.YMin * scale_factor
+        next_af.recompute()
+
+        self.airfoil = next_af
+        
 
 class Planform():
     pf_edges: List[Part.Edge] = []
@@ -122,12 +180,11 @@ class Planform():
     def __init__(self, pf_edges: List[Part.Edge]) -> None:
         self.pf_edges = Part.__sortEdges__(pf_edges)
 
-    # TODO: we may need to rethink or rename this method it is sort of funky
-    def get_distance(self, position: App.Vector, direction: App.Vector) -> Tuple[float, float]:
+    def get_rib_length_at(self, position: App.Vector, direction: App.Vector) -> Tuple[float, float]:
         '''
         use position and direction to construct a plane, then calculate the
-        intersection between the plane and the planform, as well as the leading
-        edge y coordinate
+        intersection between the plane and the planform to get rib length, as 
+        well as the leading edge y coordinate
         '''
         plane = Part.Plane(position, direction)
 
@@ -204,12 +261,6 @@ class Wing():
 
         self.path_helper = PathHelper(path.Shape.Edges)
 
-        xy_placement = App.Placement(
-            App.Vector(0,0,0),
-            App.Vector(0,0,0),
-            0
-        )
-
         planform_helper = Planform(planform.Shape.Edges)
 
         # TODO: this wants to be encapsulated somewhere
@@ -220,59 +271,19 @@ class Wing():
             # get the angle needed to rotate a rib section so its normal aligns
             # with the path tangent
             root_norm = App.Vector(-1,0,0)
-            wp_tangent: App.Vector = pose.direction.normalize()
-            rot_axis: App.Vector = root_norm.cross(wp_tangent)
-            if rot_axis.Length != 0:
-                rot_axis = rot_axis.normalize()
-            angle: float = math.degrees(root_norm.getAngle(wp_tangent))
+            pf_dist, min_y = planform_helper.get_rib_length_at(pose.position, root_norm)
 
-            pf_dist, min_y = planform_helper.get_distance(pose.position, root_norm)
+            next_rib = \
+                Rib(root_airfoil,
+                    root_norm,
+                    pose,
+                    pf_dist,
+                    min_y
+                )
 
-            base_dist = root_airfoil.Shape.BoundBox.YLength
+            next_af = next_rib.airfoil
 
-            scale_factor = pf_dist/base_dist
-
-            ra_orig_placement = root_airfoil.Placement
-            root_airfoil.Placement = xy_placement
-            af_shape: Part.Shape = root_airfoil.Shape.copy()
-            af_shape.scale(scale_factor)
-            next_af: Sketcher.SketchObject = Draft.make_sketch(af_shape, True)
-            
-            root_airfoil.Placement = ra_orig_placement
-
-            next_af.Placement = ra_orig_placement
-
-            # store off the original placement - we need it to get back into the
-            # original plane later
-            orig_placement = next_af.Placement.Base
-            orig_axis = next_af.Placement.Rotation.Axis
-            orig_angle = math.degrees(next_af.Placement.Rotation.Angle)
-
-            # clear the placement, so we can rotate the rib section properly
-            next_af.Placement = xy_placement
-
-            # rotate the rib section into the path tangent
-            next_af.Placement.rotate(
-                next_af.Shape.BoundBox.Center,
-                rot_axis,
-                angle
-            )
-
-            # rotate once more to get the rib section back into its original frame
-            next_af.Placement.rotate(
-                App.Vector(0,0,0),
-                orig_axis,
-                orig_angle
-            )
-
-            # locate the rib in the appropriate place along the path
-            next_af.Placement.Base = pose.position + orig_placement
-
-            # adjust the placement Y coordinate to keep the airfoil inside the
-            # wing planform
-            next_af.Placement.Base.y += min_y - root_airfoil.Shape.BoundBox.YMin * scale_factor
-            next_af.recompute()
-            rib_list.append(Rib(next_af))
+            rib_list.append(next_rib)
 
             obj.addObject(next_af)
 
