@@ -115,7 +115,47 @@ class Rib():
     def __init__(self, airfoil: Sketcher.Sketch, structure: Sketcher.Sketch = None) -> None:
         self.airfoil = airfoil
         self.structure = structure
+
+class Planform():
+    pf_edges: List[Part.Edge] = []
+    
+    def __init__(self, pf_edges: List[Part.Edge]) -> None:
+        self.pf_edges = Part.__sortEdges__(pf_edges)
+
+    # TODO: we may need to rethink or rename this method it is sort of funky
+    def get_distance(self, position: App.Vector, direction: App.Vector) -> Tuple[float, float]:
+        '''
+        use position and direction to construct a plane, then calculate the
+        intersection between the plane and the planform, as well as the leading
+        edge y coordinate
+        '''
+        plane = Part.Plane(position, direction)
+
+        # the plane should intersect the wing planform in two places
+        pf_intersections: List[Part.Vertex] = []
+
+        for edge in self.pf_edges:
+
+            trimmed_curve: Part.Curve = edge.Curve
+            trimmed_curve = trimmed_curve.trim(*edge.ParameterRange)
+
+            intersections = plane.intersect(trimmed_curve)
+            # if there are no intersections, skip the rest of the loop
+            if intersections is None:
+                continue
             
+            p: Part.Point
+            for p in intersections[0]:
+                pf_intersections.append(Part.Vertex(p))
+
+            # if we have found the needed planform intersections, we're done
+            if len(pf_intersections) == 2:
+                p0: Part.Vertex = pf_intersections[0]
+                p1: Part.Vertex = pf_intersections[1]
+                dist_t = p0.distToShape(p1)
+                dist = dist_t[0]
+                return dist, min(p0.Y, p1.Y)
+
 class Wing():
 
     path_helper: PathHelper
@@ -170,6 +210,8 @@ class Wing():
             0
         )
 
+        planform_helper = Planform(planform.Shape.Edges)
+
         # TODO: this wants to be encapsulated somewhere
         rib_list: List[Rib] = []
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
@@ -184,14 +226,7 @@ class Wing():
                 rot_axis = rot_axis.normalize()
             angle: float = math.degrees(root_norm.getAngle(wp_tangent))
 
-            # get the scale factor and position offset to apply to the rib section
-            # that keeps it inside the planform bounds at this position
-            pf_dist, min_y = \
-                self.__get_planform_dist(
-                    planform.Shape.Edges,
-                    pose.position, 
-                    root_norm
-                )
+            pf_dist, min_y = planform_helper.get_distance(pose.position, root_norm)
 
             base_dist = root_airfoil.Shape.BoundBox.YLength
 
@@ -248,45 +283,6 @@ class Wing():
 
         # Add this last, or chaos ensues
         obj.Proxy = self
-
-    # TODO:  I have a feeling the Planform is going to want to be its own object
-    #        with data and operations, eventually
-    def __get_planform_dist(
-            self, 
-            pf_edges: List[Part.Edge], 
-            position: App.Vector, 
-            direction: App.Vector
-        ) -> Tuple[float, float]:
-        pf_edges = Part.__sortEdges__(pf_edges)
-        plane = Part.Plane(position, direction)
-
-        # the plane should intersect the wing planform in two places
-        pf_intersections: List[Part.Vertex] = []
-
-        for edge in pf_edges:
-
-            trimmed_curve: Part.Curve = edge.Curve
-            trimmed_curve = trimmed_curve.trim(*edge.ParameterRange)
-
-            intersections = plane.intersect(trimmed_curve)
-            # if there are no intersections, skip the rest of the loop
-            if intersections is None:
-                continue
-            
-            p: Part.Point
-            for p in intersections[0]:
-                pf_intersections.append(Part.Vertex(p))
-
-            # if we have found the needed planform intersections, we're done
-            if len(pf_intersections) == 2:
-                p0: Part.Vertex = pf_intersections[0]
-                p1: Part.Vertex = pf_intersections[1]
-                dist_t = p0.distToShape(p1)
-                dist = dist_t[0]
-                return dist, min(p0.Y, p1.Y)
-        
-        print("Wing.__get_planform_dist - no intersections to planform found at position = " + str(position))
-        return None
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         property_list: List[str] = ["root_airfoil", "planform", "path", "num_sections"]
