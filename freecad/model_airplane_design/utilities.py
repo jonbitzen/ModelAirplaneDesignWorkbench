@@ -30,6 +30,25 @@ def GREEN(green: float = 1.0) -> tuple:
 def BLUE(blue: float = 1.0) -> tuple:
     return (0.0, 0.0, blue)
 
+xy_placement = \
+    App.Placement(
+        App.Vector(0,0,0),
+        App.Vector(0,0,0),
+        0
+    )
+
+yz_placement = \
+    App.Placement(
+        App.Vector(0.000000, 0.000000, 0.000000), 
+        App.Rotation(0.500000, 0.500000, 0.500000, 0.500000)
+    )
+
+xz_placement = \
+    App.Placement(
+        App.Vector(0.000000, 0.000000, 0.000000), 
+        App.Rotation(0.707107, 0.000000, 0.000000, 0.707107)
+    )
+
 class LighteningHoleBounds:
     """
     Stores a set of boundaries and control points to generate lightening holes
