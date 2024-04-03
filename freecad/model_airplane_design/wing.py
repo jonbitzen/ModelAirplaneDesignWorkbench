@@ -17,6 +17,8 @@ def create(
     num_sections: int = 5
 ):    
 
+    # TODO: Probably create this as an App::FeaturePython, since the wing is
+    #       a container, and isn't expected to have a Shape
     obj: App.DocumentObject = App.ActiveDocument.addObject(
         "Part::FeaturePython",
         obj_name
@@ -94,8 +96,25 @@ class PathHelper():
             if not pose_generated:
                 print("PathHelper.get_rib_poses: failed to generate pose at " +  str(edge_dist))
         return pose_list                    
-            
-            
+
+# TODO: I think eventually the Rib is going to need to encapsulate its airfoil
+#       as well as a structure generator.  I think it'll also need to help out
+#       when we go to compute an intersection with a spar
+#
+#       This will also likely have to be a Part::FeaturePython thing, so that it 
+#       shows up in the part container with everything it owns.  Yeah, I guess 
+#       whenever it calls execute, it'll walk its own sketches, and then it'll
+#       
+class Rib():
+
+    airfoil:    Sketcher.Sketch
+    structure:  Sketcher.Sketch
+
+    # so we could give this the root airfoil and a pose, and I think it could
+    # encapsulate all the calculations related to 
+    def __init__(self, airfoil: Sketcher.Sketch, structure: Sketcher.Sketch = None) -> None:
+        self.airfoil = airfoil
+        self.structure = structure
             
 class Wing():
 
@@ -152,6 +171,7 @@ class Wing():
         )
 
         # TODO: this wants to be encapsulated somewhere
+        rib_list: List[Rib] = []
         rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
         for pose in rib_poses:
             
@@ -216,17 +236,21 @@ class Wing():
             # adjust the placement Y coordinate to keep the airfoil inside the
             # wing planform
             next_af.Placement.Base.y += min_y - root_airfoil.Shape.BoundBox.YMin * scale_factor
-
             next_af.recompute()
-
-            lh_sk = utilities.create_lightening_hole_sketch(next_af, [])
+            rib_list.append(Rib(next_af))
 
             obj.addObject(next_af)
+
+        for rib in rib_list:
+            lh_sk = utilities.create_lightening_hole_sketch(rib.airfoil, [])
+            rib.structure = lh_sk
             obj.addObject(lh_sk)
 
         # Add this last, or chaos ensues
         obj.Proxy = self
 
+    # TODO:  I have a feeling the Planform is going to want to be its own object
+    #        with data and operations, eventually
     def __get_planform_dist(
             self, 
             pf_edges: List[Part.Edge], 
