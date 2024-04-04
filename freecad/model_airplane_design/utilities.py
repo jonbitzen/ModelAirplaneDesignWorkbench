@@ -7,10 +7,6 @@ import numpy
 from enum import Enum
 from typing import List
 
-# Helper methods, used throughout
-def create_group(name: str, doc: App.Document = App.ActiveDocument) -> App.DocumentObjectGroup:
-    return doc.addObject("App::DocumentObjectGroup", name)
-
 def TEAL(level: float) -> tuple:
     level = numpy.clip(level, 0.1, 1.0)
     return (0.0, level, level)
@@ -48,6 +44,19 @@ xz_placement = \
         App.Vector(0.000000, 0.000000, 0.000000), 
         App.Rotation(0.707107, 0.000000, 0.000000, 0.707107)
     )
+
+def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
+    p_t = Part.Point(point)
+    p_t = Part.show(p_t.toShape())
+    p_t.ViewObject.PointColor = color
+    p_t.ViewObject.PointSize = point_size
+    return p_t
+
+def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
+    p_t = Part.show(point.toShape())
+    p_t.ViewObject.PointColor = color
+    p_t.ViewObject.PointSize = point_size
+    return p_t
 
 class LighteningHoleBounds:
     """
@@ -172,7 +181,7 @@ class LighteningHoleBounds:
                 pf.ViewObject.PointSize = 10.0
                 grp.addObject(pf)
 
-        grp: App.DocumentObjectGroup = create_group("lhb-viz")
+        grp: App.DocumentObjectGroup = App.ActiveDocument.addObject("App::DocumentObjectGroup", "lhb-viz")
 
         left_f = Part.show(self.left_bound)
         left_f.ViewObject.LineColor = BLUE(0.5)
@@ -239,12 +248,12 @@ class Interval:
         return "start=" + str(self.start) + ", end=" + str(self.end)
 
 def generate_hole_bounds(
-    airfoil_sk: Sketcher.Sketch, 
-    interferences: List[Sketcher.Sketch] = [],
-    profile_offset: float = 2.0, 
-    wall_thickness: float = 2.0,
-    target_num_holes: int = 6
-) -> List[LighteningHoleBounds]:
+        airfoil_sk: Sketcher.Sketch, 
+        interferences: List[Sketcher.Sketch] = [],
+        profile_offset: float = 2.0, 
+        wall_thickness: float = 2.0,
+        target_num_holes: int = 6
+    ) -> List[LighteningHoleBounds]:
     """
     Generates a set of lightening hole bound objects, ensuring that such bounds
     do not intersect a set of interferences
