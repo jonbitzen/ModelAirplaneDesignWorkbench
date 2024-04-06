@@ -232,8 +232,6 @@ class Interval:
     Stores starting and ending interval values used to compute lightening hole
     placement
     """
-    start: float
-    end: float
     def __init__(self, start: float = 0.0, end: float = 0.0):
         self.start = start
         self.end = end
@@ -260,6 +258,11 @@ def generate_hole_bounds(
     """
     # create the interior hole profile using an offset
     af_inner_profile = airfoil_sk.Shape.makeOffset2D(-profile_offset, join=2)
+
+    orig_placements: List[App.Placement] = []
+    for idx in range(0, len(interferences)):
+        orig_placements.append(interferences[idx].Placement)
+        interferences[idx].Placement = yz_placement
 
     # create a list of intervals, and make sure they are sorted by starting
     # value so we can insert properly
@@ -288,6 +291,10 @@ def generate_hole_bounds(
     #       since we can detect it when we generate the bound list
     def generate_bounds(interval: Interval) -> List[LighteningHoleBounds]:
         num_segments: int = math.ceil(interval.length()/max_hole_width)
+
+        if num_segments == 0:
+            return []
+
         segment_length: float = interval.length()/num_segments
   
         ref_lines: List[Part.Edge] = []
@@ -324,6 +331,9 @@ def generate_hole_bounds(
     for intv in hole_intervals:
         bnds.extend(generate_bounds(intv))
 
+    for idx in range(0, len(interferences)):
+        interferences[idx].Placement = orig_placements[idx]
+
     return bnds
 
 # TODO: passing in entire sketches without actually performing any operations on
@@ -338,11 +348,6 @@ def create_lightening_hole_sketch(
     an airfoil.  A set of interferences may be provided, which represent areas
     withing the airfoil section where lightening holes should not be generated
     """
-    # generate a YZ plane placement
-    yz_placement = App.Placement(
-        App.Vector(0.000000, 0.000000, 0.000000), 
-        App.Rotation(0.500000, 0.500000, 0.500000, 0.500000)
-    )
 
     af_orig_placement = airfoil_sk.Placement
     airfoil_sk.Placement = yz_placement

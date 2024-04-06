@@ -30,19 +30,50 @@ def create(
     App.ActiveDocument.recompute()
     return obj
 
+def make_spar_cuboid_profile(width: float, height: float, name: str) -> Sketcher.Sketch:
+    spar_sk: Sketcher.Sketch = App.activeDocument().addObject('Sketcher::SketchObject', name)
+    spar_sk.Placement = utilities.xy_placement
+    spar_sk.MapMode = "Deactivated"
+
+    geoList = []
+    geoList.append(Part.LineSegment(App.Vector(-1,-1,0),App.Vector(-1,1,0)))
+    geoList.append(Part.LineSegment(App.Vector(-1,1,0),App.Vector(1,1,0)))
+    geoList.append(Part.LineSegment(App.Vector(1,1,0),App.Vector(1,-1,0)))
+    geoList.append(Part.LineSegment(App.Vector(1,-1,0),App.Vector(-1,-1,0)))
+    geoList.append(Part.Point(App.Vector(0.000000,0.000000,0)))
+    spar_sk.addGeometry(geoList, False)
+
+    conList = []
+    conList.append(Sketcher.Constraint('Coincident',0,2,1,1))
+    conList.append(Sketcher.Constraint('Coincident',1,2,2,1))
+    conList.append(Sketcher.Constraint('Coincident',2,2,3,1))
+    conList.append(Sketcher.Constraint('Coincident',3,2,0,1))
+    conList.append(Sketcher.Constraint('Horizontal',1))
+    conList.append(Sketcher.Constraint('Horizontal',3))
+    conList.append(Sketcher.Constraint('Vertical',0))
+    conList.append(Sketcher.Constraint('Vertical',2))
+    conList.append(Sketcher.Constraint('Symmetric',1,2,0,1,4,1))
+    spar_sk.addConstraint(conList)
+    del geoList, conList
+
+    spar_sk.addConstraint(Sketcher.Constraint('Coincident',4,1,-1,1))
+
+    spar_sk.addConstraint(Sketcher.Constraint('Distance',1,width))
+    spar_sk.setDatum(10,App.Units.Quantity(width))
+    spar_sk.renameConstraint(10, u'width')
+
+    spar_sk.addConstraint(Sketcher.Constraint('Distance',2,height))
+    spar_sk.setDatum(11,App.Units.Quantity(height))
+    spar_sk.renameConstraint(11, u'height')
+
+    return spar_sk
+    
 class RibPose():
-    position: App.Vector
-    direction: App.Vector
     def __init__(self, position: App.Vector, direction: App.Vector) -> None:
         self.position = position
         self.direction = direction
 
 class PathInterval():
-    start: float
-    end: float
-    offset: float
-    edge: Part.Edge
-
     def __init__(self, offset: float, edge: Part.Edge) -> None:
         self.edge = edge
         self.offset = offset
@@ -63,9 +94,10 @@ class PathInterval():
         return RibPose(pos, tan)
 
 class PathHelper():
-    path: List[PathInterval] = []
-    length: float = 0
     def __init__(self, path: List[Part.Edge]) -> None:
+
+        self.path: List[PathInterval] = []
+        self.length: float = 0
 
         origin: App.Vector = App.Vector(0,0,0)
         path.sort(key=lambda edge: edge.valueAt(edge.FirstParameter).distanceToPoint(origin))
@@ -106,12 +138,6 @@ class PathHelper():
 #       whenever it calls execute, it'll walk its own sketches, and then it'll
 #       
 class Rib():
-
-    airfoil:    Sketcher.Sketch
-    structure:  Sketcher.Sketch
-
-    # so we could give this the root airfoil and a pose, and I think it could
-    # encapsulate all the calculations related to 
     def __init__(
             self, 
             root_airfoil: Sketcher.Sketch,
@@ -120,6 +146,11 @@ class Rib():
             pf_dist: float, 
             min_y: float
         ) -> None:
+
+        self.airfoil: Sketcher.Sketch = None
+        self.structure: Sketcher.Sketch = None
+        self.interferences: List[Sketcher.Sketch] = []
+
         wp_tangent: App.Vector = pose.direction.normalize()
         rot_axis: App.Vector = root_norm.cross(wp_tangent)
         if rot_axis.Length != 0:
@@ -173,9 +204,7 @@ class Rib():
 
         self.airfoil = next_af
 
-class Planform():
-    pf_edges: List[Part.Edge] = []
-    
+class Planform():    
     def __init__(self, pf_edges: List[Part.Edge]) -> None:
         self.pf_edges = Part.__sortEdges__(pf_edges)
 
@@ -217,9 +246,6 @@ class WingEdge(Enum):
     TRAILING = 2
 
 class Wing():
-
-    path_helper: PathHelper
-
     def __init__(
             self, 
             obj: App.DocumentObject,
@@ -335,21 +361,57 @@ class Wing():
         p1_r.ViewObject.PointColor = utilities.GREEN(1.0)
         p1_r.ViewObject.PointSize = 10.0
 
-        # TODO: We need an option "projected" where we can move the wing to a 
-        #       location on the on the root where it aligns to the starting point, 
-        #       then use the wing path to project from the starting point and
-        #       the destination point - especially useful for straight spars
-        #       which, initially, will be most of them
-        # TODO: Also, I think the next main project is going to be straighten
-        #       out this wing path business.  We need a fixed policy for its
-        #       initial point         
-        p1_t = self.__get_spar_point(r2.airfoil, 0.33, WingEdge.TRAILING)
+        p1_t = self.__get_spar_point(r2.airfoil, 0.5, WingEdge.TRAILING)
         p1_t = Part.show(p1_t)
         p1_t.ViewObject.PointColor = utilities.GREEN(1.0)
         p1_t.ViewObject.PointSize = 10.0
 
+        fs_root_sk = make_spar_cuboid_profile(4, 8, "front-spar-root")
+        fs_root_sk.Placement.rotate(
+            App.Vector(0,0,0),
+            p0_r.Placement.Rotation.Axis,
+            math.degrees(p0_r.Placement.Rotation.Angle)
+        )
+        fs_root_sk.Placement.Base += p0_r.Placement.Base
+        fs_root_sk.recompute()
+
+        fs_tip_sk = make_spar_cuboid_profile(4, 8, "front-spar-tip")
+        fs_tip_sk.Placement.rotate(
+            App.Vector(0,0,0),
+            p0_t.Placement.Rotation.Axis,
+            math.degrees(p0_t.Placement.Rotation.Angle)
+        )
+        fs_tip_sk.Placement.Base += p0_t.Placement.Base
+        fs_tip_sk.recompute()
+
+        fs_loft: Part.Feature = App.ActiveDocument.addObject("Part::Loft", "front-spar")
+        fs_loft.Sections = [fs_root_sk, fs_tip_sk]
+        fs_loft.Solid = True
+        fs_loft.Ruled = False
+        fs_loft.Closed = False
+
+        # create planes for each of the ribs
         for rib in rib_list:
-            lh_sk = utilities.create_lightening_hole_sketch(rib.airfoil, [])
+            rib_face: Part.Feature = Part.makeFace([rib.airfoil.Shape.copy()], "Part::FaceMakerSimple")
+            rib_face = Part.show(rib_face, "rib_face")
+            rib_face.Shape = rib_face.Shape.transformGeometry(rib.airfoil.Placement.Matrix.inverse())
+            rib_face.Placement = rib.airfoil.Placement
+            
+            sec: Part.Feature = App.ActiveDocument.addObject("Part::Section", "spar-section")
+            sec.Base = fs_loft
+            sec.Tool = rib_face
+            sec.recompute()
+            sec.Shape = sec.Shape.transformGeometry(rib_face.Placement.Matrix.inverse())
+            spar_hole: Sketcher.Sketch = Draft.make_sketch([sec.Shape], autoconstraints=True, name="spar_hole")
+            if spar_hole is not None:
+                spar_hole.Placement = rib_face.Placement
+                rib.interferences.append(spar_hole)
+                
+            App.ActiveDocument.removeObject(sec.Name)
+
+        # generate the lightening hole sketches
+        for rib in rib_list:
+            lh_sk = utilities.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
             rib.structure = lh_sk
             obj.addObject(lh_sk)
 
@@ -378,7 +440,6 @@ class Wing():
 
         e_list = airfoil.Shape.Edges
 
-        # pts = []
         pts: List[Tuple[float,float]]
         for e in e_list:
             pts = e_l.intersect2d(e.Curve, Part.Plane(App.Vector(0,0,0), App.Vector(0,0,1)))
@@ -391,18 +452,20 @@ class Wing():
         p_bot = pts[1]
 
         mid_pt = App.Vector(x_fs, (p_top[1] + p_bot[1])/2, 0)
-        
-        p_m = Part.Point(mid_pt).toShape()
+        p_m = Part.Point(App.Vector(0,0,0)).toShape()
+        p_m.Placement.Base = mid_pt
 
         airfoil.Placement = orig_pose
 
+        ob = p_m.Placement.Base
+
         p_m.Placement.rotate(
-            App.Vector(0,0,0), 
+            -ob, 
             orig_pose.Rotation.Axis, 
             math.degrees(orig_pose.Rotation.Angle)
         )
         
-        p_m.Placement.Base = orig_pose.Base
+        p_m.Placement.Base += orig_pose.Base
 
         return p_m
 
