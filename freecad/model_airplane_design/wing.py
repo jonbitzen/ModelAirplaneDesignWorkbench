@@ -328,8 +328,6 @@ class Wing():
         
         # generate the lightening hole sketches
         for rib in rib_list:
-            if rib.airfoil.Name == "Sketch009":
-                continue
             lh_sk = utilities.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
             rib.structure = lh_sk
             obj.addObject(lh_sk)
@@ -352,6 +350,7 @@ class Wing():
             spar_hole: Sketcher.Sketch = Draft.make_sketch([sec.Shape], autoconstraints=True, name="spar_hole")
             if spar_hole is not None:
                 spar_hole.Placement = rib_face.Placement
+                spar_hole.recompute()
                 rib.interferences.append(spar_hole)
                 
             App.ActiveDocument.removeObject(sec.Name)
