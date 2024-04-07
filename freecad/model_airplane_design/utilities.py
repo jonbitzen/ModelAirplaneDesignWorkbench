@@ -45,6 +45,9 @@ xz_placement = \
         App.Rotation(0.707107, 0.000000, 0.000000, 0.707107)
     )
 
+# TODO: I think we need a utility that automates change of placement and geometry
+#       that I seem to be doing everywhere on an ad-hoc basis
+
 def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
     p_t = Part.Point(point)
     p_t = Part.show(p_t.toShape())
