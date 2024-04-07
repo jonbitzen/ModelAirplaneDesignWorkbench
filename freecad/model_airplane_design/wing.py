@@ -320,10 +320,10 @@ class Wing():
         r1 = rib_list[num_sections-2]
         r2 = rib_list[num_sections-1]
 
-        fs_loft = self.__make_spar(r0, 0.2, r1, 0.2, 4.0, 8.0, WingEdge.LEADING)
+        fs_loft = self.__make_spar("front-spar", r0, 0.2, r1, 0.2, 4.0, 8.0, WingEdge.LEADING)
         self.__make_spar_penetrations(rib_list, fs_loft)
 
-        rs_loft = self.__make_spar(r0, 0.33, r2, 0.5, 3.0, 3.0, WingEdge.TRAILING)
+        rs_loft = self.__make_spar("rear-spar", r0, 0.33, r2, 0.5, 3.0, 3.0, WingEdge.TRAILING)
         self.__make_spar_penetrations(rib_list, rs_loft)
         
         # generate the lightening hole sketches
@@ -357,6 +357,7 @@ class Wing():
             App.ActiveDocument.removeObject(sec.Name)
 
     def __make_spar(self, 
+            name: str,
             first_rib: Rib, first_frac: float, 
             last_rib: Rib, last_frac: float,
             width: float, height: float,
@@ -372,7 +373,7 @@ class Wing():
         p0_t.ViewObject.PointColor = utilities.BLUE(1.0)
         p0_t.ViewObject.PointSize = 10.0
 
-        fs_root_sk = make_spar_cuboid_profile(width, height, "front-spar-root")
+        fs_root_sk = make_spar_cuboid_profile(width, height, name+"-root")
         fs_root_sk.Placement.rotate(
             App.Vector(0,0,0),
             p0_r.Placement.Rotation.Axis,
@@ -381,7 +382,7 @@ class Wing():
         fs_root_sk.Placement.Base += p0_r.Placement.Base
         fs_root_sk.recompute()
 
-        fs_tip_sk = make_spar_cuboid_profile(width, height, "front-spar-tip")
+        fs_tip_sk = make_spar_cuboid_profile(width, height, name+"-tip")
         fs_tip_sk.Placement.rotate(
             App.Vector(0,0,0),
             p0_t.Placement.Rotation.Axis,
@@ -390,7 +391,7 @@ class Wing():
         fs_tip_sk.Placement.Base += p0_t.Placement.Base
         fs_tip_sk.recompute()
 
-        fs_loft: Part.Feature = App.ActiveDocument.addObject("Part::Loft", "front-spar")
+        fs_loft: Part.Feature = App.ActiveDocument.addObject("Part::Loft", name)
         fs_loft.Sections = [fs_root_sk, fs_tip_sk]
         fs_loft.Solid = True
         fs_loft.Ruled = False
