@@ -1,3 +1,5 @@
+from . import rib_hole_generators
+from . import utilities
 import Draft
 from enum import Enum
 import FreeCAD as App
@@ -7,7 +9,6 @@ import Part
 import Sketcher
 from typing import Tuple
 from typing import List
-from . import utilities
 
 def create(
     obj_name: str, 
@@ -328,7 +329,7 @@ class Wing():
         
         # generate the lightening hole sketches
         for rib in rib_list:
-            lh_sk = utilities.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
+            lh_sk = rib_hole_generators.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
             rib.structure = lh_sk
             obj.addObject(lh_sk)
 
