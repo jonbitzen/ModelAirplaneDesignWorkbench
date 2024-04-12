@@ -18,8 +18,6 @@ def create(
     num_sections: int = 5
 ):    
 
-    # TODO: Probably create this as an App::FeaturePython, since the wing is
-    #       a container, and isn't expected to have a Shape
     obj: App.DocumentObject = App.ActiveDocument.addObject(
         "Part::FeaturePython",
         obj_name
