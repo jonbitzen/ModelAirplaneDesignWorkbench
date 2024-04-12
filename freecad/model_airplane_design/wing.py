@@ -16,7 +16,7 @@ def create(
     planform: Sketcher.Sketch,
     path: Sketcher.Sketch,
     num_sections: int = 5
-):    
+) -> App.DocumentObject:    
 
     obj: App.DocumentObject = App.ActiveDocument.addObject(
         "Part::FeaturePython",
@@ -81,10 +81,10 @@ class PathInterval():
         self.start = edge.FirstParameter + offset
         self.end = edge.LastParameter + offset
 
-    def contains(self, location: float):
+    def contains(self, location: float) -> bool:
         return location >= self.start and location <= self.end
 
-    def get_pose_at(self, location: float):
+    def get_pose_at(self, location: float) -> RibPose:
         if not self.contains(location):
             return None
         loc: float = location - self.offset
@@ -112,7 +112,7 @@ class PathHelper():
             self.path.append(path_segment)
             self.length += edge.Length
 
-    def get_rib_poses(self, num_poses: int):
+    def get_rib_poses(self, num_poses: int) -> List[RibPose]:
         pose_list: List[RibPose] = []
         for edge_dist in numpy.linspace(0.0, self.length, num_poses):
             pose_generated: bool = False
