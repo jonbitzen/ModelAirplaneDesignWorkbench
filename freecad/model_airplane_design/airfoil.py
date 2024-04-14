@@ -1,3 +1,4 @@
+import Draft
 from enum import Enum
 import FreeCAD as App
 import numpy
@@ -33,13 +34,22 @@ class AirfoilData:
         self.name = name
         self.filename = filename
         self.type =type
+        self.master_sketch = self.__to_master_sketch()
 
-    def to_sketch(self, chord: float, trailing_edge_type=TrailingEdgeType.ROUNDED) -> Sketcher.Sketch:
+    def to_sketch(self, chord: float) -> Sketcher.Sketch:
+
+        scale_factor = chord / self.master_sketch.Shape.BoundBox.XLength
+        scaled_af_shape = self.master_sketch.Shape.copy()
+        scaled_af_shape.scale(scale_factor)
+        return Draft.make_sketch(scaled_af_shape, autoconstraints=True, name=self.name+"-sketch")
+
+    def __to_master_sketch(self, trailing_edge_type=TrailingEdgeType.LINE) -> Sketcher.Sketch:
         """
         Generate a fully-constrained sketch from the internally held Lednicer-type 
         coordinates
         """
-        af_sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", self.name + "-sketch")
+        af_sk = Sketcher.Sketch()
+        
         bsp = Part.BSplineCurve()
         bsp.interpolate(self.coords)
         constraints: List[Sketcher.Constraint] = []
@@ -74,7 +84,7 @@ class AirfoilData:
                         numpy.deg2rad(90)
                     )
 
-                    id_arc_top = af_sk.addGeometry(arc_top, False)
+                    id_arc_top = af_sk.addGeometry(arc_top)
 
                     constraints.append(Sketcher.Constraint("Tangent", bsp_id, 1, id_arc_top, 2))
 
@@ -88,7 +98,7 @@ class AirfoilData:
                         numpy.deg2rad(0)
                     )
 
-                    id_arc_bottom = af_sk.addGeometry(arc_bottom, False)
+                    id_arc_bottom = af_sk.addGeometry(arc_bottom)
                     
                     constraints.append(Sketcher.Constraint("Tangent", bsp_id, 2, id_arc_bottom, 1))
                     constraints.append(Sketcher.Constraint("Tangent", id_arc_top, 1, id_arc_bottom, 2))
@@ -96,8 +106,8 @@ class AirfoilData:
                     af_sk.solve()
                     constraints.clear()
 
-                    constraints.append(Sketcher.Constraint("Radius", id_arc_bottom, af_sk.Geometry[id_arc_bottom].Radius))
-                    constraints.append(Sketcher.Constraint("Radius", id_arc_top, af_sk.Geometry[id_arc_top].Radius))
+                    constraints.append(Sketcher.Constraint("Radius", id_arc_bottom, af_sk.Geometries[id_arc_bottom].Radius))
+                    constraints.append(Sketcher.Constraint("Radius", id_arc_top, af_sk.Geometries[id_arc_top].Radius))
                     af_sk.addConstraint(constraints)
                     af_sk.solve()
                     constraints.clear()
