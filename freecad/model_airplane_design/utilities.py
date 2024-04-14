@@ -21,6 +21,10 @@ def GREEN(green: float = 1.0) -> tuple:
 def BLUE(blue: float = 1.0) -> tuple:
     return (0.0, 0.0, blue)
 
+x_axis = App.Vector(1,0,0)
+y_axis = App.Vector(0,1,0)
+z_axis = App.Vector(0,0,1)
+
 xy_placement = \
     App.Placement(
         App.Vector(0,0,0),
