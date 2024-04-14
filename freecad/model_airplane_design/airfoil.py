@@ -119,7 +119,7 @@ class AirfoilData:
 
 def load(filename: str) -> AirfoilData:
     """
-    Load airfoil coordinate from a .dat file.  Coordinates may be in either Selig
+    Load airfoil coordinates from a .dat file.  Coordinates may be in either Selig
     or Lednicer format
     """
     airfoil_name = Path(filename).stem
