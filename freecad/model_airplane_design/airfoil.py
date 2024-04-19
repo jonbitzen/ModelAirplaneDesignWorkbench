@@ -16,6 +16,12 @@ class TrailingEdgeType(Enum):
     LINE = 1
     ROUNDED = 2
 
+class AirfoilType(Enum):
+    CLARKY = "~/Documents/airfoil-data/clarky.dat"
+    GOE173 = "~/Documents/airfoil-data/goe173.dat"
+    NACA2411 = "~/Documents/airfoil-data/naca2411.dat"
+    NACA654221 = "~/Documents/airfoil-data/naca654221.dat"
+
 class AirfoilData:
     """
     Container for a set of airfoil coordinates in Lednicer format, where

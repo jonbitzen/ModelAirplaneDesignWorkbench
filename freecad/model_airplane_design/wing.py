@@ -1,3 +1,4 @@
+from . import airfoil
 from . import rib_hole_generators
 from . import utilities
 import Draft
@@ -5,6 +6,7 @@ from enum import Enum
 import FreeCAD as App
 import math
 import numpy
+import os.path
 import Part
 import Sketcher
 from typing import Tuple
@@ -12,10 +14,10 @@ from typing import List
 
 def create(
     obj_name: str, 
-    root_airfoil: Sketcher.Sketch,
-    planform: Sketcher.Sketch,
-    path: Sketcher.Sketch,
-    num_sections: int = 5
+    # root_airfoil: Sketcher.Sketch,
+    # planform: Sketcher.Sketch,
+    # path: Sketcher.Sketch,
+    # num_sections: int = 5
 ) -> App.DocumentObject:    
 
     obj: App.DocumentObject = App.ActiveDocument.addObject(
@@ -23,8 +25,10 @@ def create(
         obj_name
     )
 
-    Wing(obj, root_airfoil, planform, path, num_sections),
-    WingViewProvider(obj.ViewObject),
+    # Wing(obj, root_airfoil, planform, path, num_sections),
+    # WingViewProvider(obj.ViewObject),
+    Wing(obj)
+    WingViewProvider(obj.ViewObject)
 
     App.ActiveDocument.recompute()
     return obj
@@ -248,88 +252,97 @@ class Wing():
     def __init__(
             self, 
             obj: App.DocumentObject,
-            root_airfoil: Sketcher.Sketch,
-            planform: Sketcher.Sketch,
-            path: Sketcher.Sketch,
-            num_sections: int = 5
+            # root_airfoil: Sketcher.Sketch,
+            # planform: Sketcher.Sketch,
+            # path: Sketcher.Sketch,
+            # num_sections: int = 5
         ) -> None:
 
         self.attach(obj)
 
+        # obj.addProperty(
+        #     "App::PropertyLink", 
+        #     "root_airfoil", 
+        #     "Wing", 
+        #     "The airfoil to use for the wing root"
+        # ).root_airfoil = None
+        # obj.addObject(obj.root_airfoil)
+
         obj.addProperty(
-            "App::PropertyLink", 
-            "root_airfoil", 
-            "Wing", 
-            "The airfoil to use for the wing root"
-        ).root_airfoil = root_airfoil
-        obj.addObject(obj.root_airfoil)
+            "App::PropertyEnumeration",
+            "airfoil_type",
+            "Wing",
+            "The airfoil type"
+        ).airfoil_type = [en.value for en in airfoil.AirfoilType]
 
         obj.addProperty(
             "App::PropertyLink",
             "planform",
             "Wing",
             "A sketch of the wing planform"
-        ).planform = planform
-        obj.addObject(obj.planform)
+        ).planform = None
+        # obj.addObject(obj.planform)
 
         obj.addProperty(
             "App::PropertyLink",
-            "path",
+            "elevation_path",
             "Wing",
             "A sketch giving the wing extent through the planform"
-        ).path = path
-        obj.addObject(obj.path)
+        ).elevation_path = None
+        # obj.addObject(obj.path)
 
         obj.addProperty(
             "App::PropertyQuantity",
             "num_sections",
             "Wing",
             "The number of wing sections to generate along the path"
-        ).num_sections = num_sections
+        ).num_sections = 5
 
-        self.path_helper = PathHelper(path.Shape.Edges)
+        
 
-        planform_helper = Planform(planform.Shape.Edges)
+        # self.path_helper = PathHelper(path.Shape.Edges)
+
+        # planform_helper = Planform(planform.Shape.Edges)
 
         # TODO: this wants to be encapsulated somewhere
-        rib_list: List[Rib] = []
-        rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
-        for pose in rib_poses:
+        # rib_list: List[Rib] = []
+        # rib_poses: List[RibPose] = self.path_helper.get_rib_poses(num_sections)
+        # for pose in rib_poses:
             
-            # get the angle needed to rotate a rib section so its normal aligns
-            # with the path tangent
-            root_norm = App.Vector(-1,0,0)
-            pf_dist, min_y = planform_helper.get_rib_length_at(pose.position, root_norm)
+        #     # get the angle needed to rotate a rib section so its normal aligns
+        #     # with the path tangent
+        #     root_norm = App.Vector(-1,0,0)
+        #     pf_dist, min_y = planform_helper.get_rib_length_at(pose.position, root_norm)
 
-            next_rib = \
-                Rib(root_airfoil,
-                    root_norm,
-                    pose,
-                    pf_dist,
-                    min_y
-                )
+        #     next_rib = \
+        #         Rib(root_airfoil,
+        #             root_norm,
+        #             pose,
+        #             pf_dist,
+        #             min_y
+        #         )
 
-            next_af = next_rib.airfoil
+        #     next_af = next_rib.airfoil
 
-            rib_list.append(next_rib)
+        #     rib_list.append(next_rib)
 
-            obj.addObject(next_af)
+        #     obj.addObject(next_af)
 
-        r0 = rib_list[0]
-        r1 = rib_list[num_sections-2]
-        r2 = rib_list[num_sections-1]
+        # r0 = rib_list[0]
+        # r1 = rib_list[num_sections-2]
+        # r2 = rib_list[num_sections-1]
 
-        fs_loft = self.__make_spar("front-spar", r0, 0.2, r1, 0.2, 4.0, 8.0, WingEdge.LEADING)
-        self.__make_spar_penetrations(rib_list, fs_loft)
+        # fs_loft = self.__make_spar("front-spar", r0, 0.2, r1, 0.2, 4.0, 8.0, WingEdge.LEADING)
+        # self.__make_spar_penetrations(rib_list, fs_loft)
 
-        rs_loft = self.__make_spar("rear-spar", r0, 0.33, r2, 0.5, 3.0, 3.0, WingEdge.TRAILING)
-        self.__make_spar_penetrations(rib_list, rs_loft)
+        # rs_loft = self.__make_spar("rear-spar", r0, 0.33, r2, 0.5, 3.0, 3.0, WingEdge.TRAILING)
+        # self.__make_spar_penetrations(rib_list, rs_loft)
         
-        # generate the lightening hole sketches
-        for rib in rib_list:
-            lh_sk = rib_hole_generators.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
-            rib.structure = lh_sk
-            obj.addObject(lh_sk)
+        # # generate the lightening hole sketches
+        # for rib in rib_list:
+        #     lh_sk = rib_hole_generators.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
+        #     rib.structure = lh_sk
+            # obj.addObject(lh_sk)
 
         # Add this last, or chaos ensues
         obj.Proxy = self
@@ -354,7 +367,9 @@ class Wing():
                 
             App.ActiveDocument.removeObject(sec.Name)
 
-    def __make_spar(self, 
+    
+    def __make_spar(
+            self, 
             name: str,
             first_rib: Rib, first_frac: float, 
             last_rib: Rib, last_frac: float,
@@ -449,21 +464,66 @@ class Wing():
         return p_m
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
-        property_list: List[str] = ["root_airfoil", "planform", "path", "num_sections"]
 
-        for prop in property_list:
-            if not hasattr(obj, prop):
-                return
+        properties: List[str] = ["airfoil_type", "planform", "elevation_path", "num_sections"]
+    
+        if property in properties:
+            print("updated property: " + property)
 
-        if property in property_list:
-            self.execute(obj)
+        if obj.planform is not None and obj.elevation_path is not None:
+            if property in properties:
+                print("doing an update!")
+                self.execute(obj)
+
+
+        # property_list: List[str] = ["root_airfoil", "planform", "path", "num_sections"]
+
+        # for prop in property_list:
+        #     if not hasattr(obj, prop):
+        #         return
+
+        # if property in property_list:
+        #     self.execute(obj)
 
     def attach(self, obj: App.DocumentObject) -> None:
         obj.addExtension("App::OriginGroupExtensionPython")
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def execute(self, obj: App.DocumentObject) -> None:
-        print("Wing.execute")
+
+        if obj.planform is None and obj.elevation_path is None:
+            return
+
+        path_helper = PathHelper(obj.elevation_path.Shape.Edges)
+        planform_helper = Planform(obj.planform.Shape.Edges)
+
+        rib_list: List[Rib] = []
+        rib_poses: List[RibPose] = path_helper.get_rib_poses(int(obj.num_sections))
+        af_data = airfoil.load(os.path.expanduser(obj.airfoil_type))
+        root_af = af_data.to_sketch(100)
+        for pose in rib_poses:
+            
+            # get the angle needed to rotate a rib section so its normal aligns
+            # with the path tangent
+            root_norm = App.Vector(-1,0,0)
+            pf_dist, min_y = planform_helper.get_rib_length_at(pose.position, root_norm)
+
+            # lets make this take a non-docobject sketch
+            next_rib = \
+                Rib(root_af,
+                    root_norm,
+                    pose,
+                    pf_dist,
+                    min_y
+                )
+
+            next_af = next_rib.airfoil
+
+            rib_list.append(next_rib)
+
+            obj.addObject(next_af)
+
+
 
 class WingViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
