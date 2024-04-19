@@ -2,6 +2,7 @@ import Draft
 from enum import Enum
 import FreeCAD as App
 import numpy
+import os.path
 import Part
 from pathlib import Path
 import Sketcher
@@ -15,6 +16,12 @@ class FileType(Enum):
 class TrailingEdgeType(Enum):
     LINE = 1
     ROUNDED = 2
+
+class AirfoilType(Enum):
+    CLARKY = "~/Documents/airfoil-data/clarky.dat"
+    GOE173 = "~/Documents/airfoil-data/goe173.dat"
+    NACA2411 = "~/Documents/airfoil-data/naca2411.dat"
+    NACA654221 = "~/Documents/airfoil-data/naca654221.dat"
 
 class AirfoilData:
     """
@@ -124,7 +131,7 @@ def load(filename: str) -> AirfoilData:
     """
     airfoil_name = Path(filename).stem
 
-    raw_coords = numpy.loadtxt(filename, skiprows=1)
+    raw_coords = numpy.loadtxt(os.path.expanduser(filename), skiprows=1)
 
     # Selig contains an initial coordinate pair which represents the number of 
     # coordinates for the upper and lower airfoil surface, which will always 
