@@ -2,6 +2,8 @@ import FreeCAD as App
 from . import airfoil
 from typing import Tuple
 from typing import List
+import PartDesign
+import Sketcher
 
 def create(
     obj_name: str,
@@ -68,8 +70,22 @@ class Rib():
     def execute(self, obj: App.DocumentObject) -> None:
         self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
         tmp_placement: App.Placement = obj.Placement
-        obj.Shape = self.airfoil_data.to_shape(obj.getPropertyByName("chord"))
+
+        tmp_af: Sketcher.SketchObject = self.airfoil_data.to_sketch(obj.getPropertyByName("chord"))
+        tmp_af.recompute()
+        tmp_body: PartDesign.Body = App.ActiveDocument.addObject("PartDesign::Body", "tmp_body")
+        tmp_pad = tmp_body.newObject("PartDesign::Pad", "tmp_pad")
+        tmp_pad.Profile = tmp_af
+        tmp_pad.Length = obj.getPropertyByName("thickness")
+        tmp_pad.recompute()
+        tmp_body.recompute()
+
+        obj.Shape = tmp_body.Shape.copy()
         obj.Placement = tmp_placement
+
+        App.ActiveDocument.removeObject(tmp_body.Name)
+        App.ActiveDocument.removeObject(tmp_af.Name)
+        App.ActiveDocument.removeObject(tmp_pad.Name)
 
 class RibViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
