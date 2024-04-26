@@ -1,9 +1,11 @@
-import FreeCAD as App
 from . import airfoil
-from typing import Tuple
-from typing import List
+import Draft
+import FreeCAD as App
+import Part
 import PartDesign
 import Sketcher
+from typing import Tuple
+from typing import List
 
 def create(
     obj_name: str,
@@ -49,7 +51,34 @@ class Rib():
             "Airfoil type"
         ).airfoil = [e.name for e in airfoil.AirfoilType]
 
+        self.intersections: List[Part.Shape] = []
+
+        self.Object = obj
         obj.Proxy = self
+
+    def add_cut(self, other_solid: Part.Feature) -> None:
+        
+        # these start out in the xy plane
+        af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
+        af_sketch.Placement = self.Object.Placement
+        af_sketch.recompute()
+        rib_face: Part.Feature = Part.makeFace([af_sketch.Shape], "Part::FaceMakerSimple")
+        rib_face = Part.show(rib_face)
+        
+        sec: Part.Feature = App.ActiveDocument.addObject("Part::Section", "sec")
+        sec.Base = other_solid
+        sec.Tool = rib_face
+        sec.recompute()
+
+        new_intersection = sec.Shape.transformGeometry(self.Object.Placement.Matrix.inverse())
+        self.intersections.append(new_intersection)
+
+        App.ActiveDocument.removeObject(af_sketch.Name)
+        App.ActiveDocument.removeObject(sec.Name)
+        App.ActiveDocument.removeObject(rib_face.Name)
+
+        self.execute(self.Object)
+
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         """
@@ -78,11 +107,27 @@ class Rib():
         tmp_pad.Profile = tmp_af
         tmp_pad.Length = obj.getPropertyByName("thickness")
         tmp_pad.recompute()
+
+        tmp_pkt = None
+        tmp_sketch = None
+        if len(self.intersections) > 0:
+            print("adding intersections")
+            tmp_pkt = tmp_body.newObject("PartDesign::Pocket", "tmp_pkt")
+            tmp_sketch = Draft.make_sketch(self.intersections, autoconstraints=True, name="tmp_sk")
+            tmp_sketch.recompute()
+            tmp_pkt.Profile = tmp_sketch
+            tmp_pkt.Length = 2*obj.getPropertyByName("thickness")
+            tmp_pkt.Midplane = True
+            tmp_pkt.recompute()
+
         tmp_body.recompute()
 
         obj.Shape = tmp_body.Shape.copy()
         obj.Placement = tmp_placement
 
+        if tmp_pkt is not None:
+            App.ActiveDocument.removeObject(tmp_pkt.Name)
+            App.ActiveDocument.removeObject(tmp_sketch.Name)
         App.ActiveDocument.removeObject(tmp_body.Name)
         App.ActiveDocument.removeObject(tmp_af.Name)
         App.ActiveDocument.removeObject(tmp_pad.Name)
