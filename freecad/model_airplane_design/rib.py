@@ -1,4 +1,5 @@
 from . import airfoil
+from . import rib_hole_generators as rhg
 import Draft
 import FreeCAD as App
 import Part
@@ -111,14 +112,27 @@ class Rib():
         tmp_pkt = None
         tmp_sketch = None
         if len(self.intersections) > 0:
-            print("adding intersections")
-            tmp_pkt = tmp_body.newObject("PartDesign::Pocket", "tmp_pkt")
             tmp_sketch = Draft.make_sketch(self.intersections, autoconstraints=True, name="tmp_sk")
             tmp_sketch.recompute()
+            tmp_pkt = tmp_body.newObject("PartDesign::Pocket", "tmp_pkt")
             tmp_pkt.Profile = tmp_sketch
             tmp_pkt.Length = 2*obj.getPropertyByName("thickness")
             tmp_pkt.Midplane = True
             tmp_pkt.recompute()
+
+        intersection_sketches: List[Sketcher.Sketch] = []
+        for intersection in self.intersections:
+            sk = Draft.make_sketch([intersection], autoconstraints=True, name="tmp_sk")
+            sk.recompute()
+            intersection_sketches.append(sk)
+
+        lh_sk = rhg.create_lightening_hole_sketch(tmp_af, intersection_sketches)
+        lh_sk.recompute()
+        lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
+        lh_pkt.Profile = lh_sk
+        lh_pkt.Length = 2*obj.getPropertyByName("thickness")
+        lh_pkt.Midplane = True
+        lh_pkt.recompute()
 
         tmp_body.recompute()
 
@@ -131,6 +145,11 @@ class Rib():
         App.ActiveDocument.removeObject(tmp_body.Name)
         App.ActiveDocument.removeObject(tmp_af.Name)
         App.ActiveDocument.removeObject(tmp_pad.Name)
+        App.ActiveDocument.removeObject(lh_sk.Name)
+        App.ActiveDocument.removeObject(lh_pkt.Name)
+
+        for intersection in intersection_sketches:
+            App.ActiveDocument.removeObject(intersection.Name)
 
 class RibViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
