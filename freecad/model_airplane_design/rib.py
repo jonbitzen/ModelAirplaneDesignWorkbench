@@ -59,6 +59,12 @@ class Rib():
 
     def add_cut(self, other_solid: Part.Feature) -> None:
         
+        # TODO: store the name of the feature used to do the cut, and make a
+        #       mapping to the originating feature and its cut, so that we can
+        #       - remove cut features
+        #       - check whether the cut features have changed in execute, so we
+        #         can skip the hole generation if they havent
+
         # these start out in the xy plane
         af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
         af_sketch.Placement = self.Object.Placement
