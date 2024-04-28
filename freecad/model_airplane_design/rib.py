@@ -64,6 +64,9 @@ class Rib():
         #       - remove cut features
         #       - check whether the cut features have changed in execute, so we
         #         can skip the hole generation if they havent
+        #       Also I think this is a natural place to add a parameter for the
+        #       standoff to use for the cut feature, since you may need different
+        #       amounts of structure around the cut, depending on what it is
 
         # these start out in the xy plane
         af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
