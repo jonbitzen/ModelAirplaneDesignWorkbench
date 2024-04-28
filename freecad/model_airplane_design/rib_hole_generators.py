@@ -1,5 +1,6 @@
 from . import utilities
 import Draft
+import DraftGeomUtils
 from enum import Enum
 import FreeCAD as App
 import math
@@ -8,6 +9,75 @@ import Part
 import Sketcher
 from typing import List
 
+
+class HoleExclusion():
+    def __init__(
+            self,
+            geometry: Part.Wire,
+            standoff: float
+        ) -> None:
+        
+        if not DraftGeomUtils.is_planar(geometry):
+            raise ValueError("Hole exclusion geometry is non-planar")
+
+        if standoff < 0.0:
+            raise ValueError("Hole exclusion standoff must not be negative")
+
+        self.geometry = geometry
+        self.standoff = standoff
+
+    def get_excluded_region(self) -> App.BoundBox:
+        region = self.geometry.makeOffset2D(self.standoff, join=2)
+        return region.BoundBox
+
+class Interval:
+    """
+    Stores starting and ending interval values used to compute lightening hole
+    placement
+    """
+    def __init__(self, start: float = 0.0, end: float = 0.0):
+        self.start = start
+        self.end = end
+
+    def length(self) -> float:
+        """
+        Provides the length of the interval
+        """
+        return self.end-self.start
+
+    def __str__(self):
+        return "start=" + str(self.start) + ", end=" + str(self.end)
+
+class HoleBoundRegion():
+    def __init__(
+            self, 
+            af_inner_contour: Part.Shape, 
+            interval: Interval) -> None:
+        if af_inner_contour is None:
+            raise ValueError("Airfoil inner contour must not be None")
+        
+        if interval is None:
+            raise ValueError("Hole bound interval must not be None")
+
+        self.af_inner_counter = af_inner_contour
+        self.interval = interval        
+
+class HoleBoundGenerator():
+    def __init__(
+            self,
+            airfoil_sk: Sketcher.Sketch,
+            inset_width: float,
+            excluded_regions: List[HoleExclusion]
+        ) -> None:
+        self.airfoil_sk = airfoil_sk
+        self.inset_width = inset_width
+        self.excluded_regions = excluded_regions
+
+    def get_hole_bound_regions(self) -> List[HoleBoundRegion]:
+
+        af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width, join=2)
+
+        return []
 
 class LighteningHoleBounds:
     """
@@ -177,24 +247,6 @@ class LighteningHoleBounds:
         intersections.sort(key=lambda pt: pt.z, reverse=True)
 
         return intersections                        
-
-class Interval:
-    """
-    Stores starting and ending interval values used to compute lightening hole
-    placement
-    """
-    def __init__(self, start: float = 0.0, end: float = 0.0):
-        self.start = start
-        self.end = end
-
-    def length(self) -> float:
-        """
-        Provides the length of the interval
-        """
-        return self.end-self.start
-
-    def __str__(self):
-        return "start=" + str(self.start) + ", end=" + str(self.end)
 
 # TODO: This wants to be private, since its not a part of the API
 def generate_hole_bounds(
