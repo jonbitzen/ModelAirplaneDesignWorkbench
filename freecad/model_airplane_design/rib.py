@@ -80,6 +80,14 @@ class Rib():
         sec.Tool = rib_face
         sec.recompute()
 
+        # TODO: Since these exclusion/intersections MUST be in the XY plane, we
+        #       probably ought to force them to be initialized in a way such that
+        #       is *always* true, or that we at least guide ourselves to make it
+        #       so
+        # store intersections in the XY plane - when we calculate the lightening
+        # holes, we will do everything on the "base" airfoil template scaled to
+        # the correct chord, and then transform the hole sketch back into the
+        # Rib's Placement
         new_intersection = sec.Shape.transformGeometry(self.Object.Placement.Matrix.inverse())
         self.intersections.append(new_intersection)
 
