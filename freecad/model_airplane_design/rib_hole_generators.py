@@ -1,4 +1,5 @@
 from . import utilities
+from abc import ABC, abstractmethod
 import Draft
 import DraftGeomUtils
 from enum import Enum
@@ -9,6 +10,27 @@ import Part
 import Sketcher
 from typing import List
 
+
+class Interval():
+    """
+    Stores starting and ending interval values used to compute lightening hole
+    placement
+    """
+    def __init__(self, start: float = 0.0, end: float = 0.0):
+        self.start = start
+        self.end = end
+
+    def length(self) -> float:
+        """
+        Provides the length of the interval
+        """
+        return self.end-self.start
+
+    def __str__(self):
+        return "start=" + str(self.start) + ", end=" + str(self.end)
+    
+    def __lt__(self, other: 'Interval'):
+        return self.start < other.start
 
 class HoleExclusion():
     def __init__(
@@ -29,24 +51,10 @@ class HoleExclusion():
     def get_excluded_region(self) -> App.BoundBox:
         region = self.geometry.makeOffset2D(self.standoff, join=2)
         return region.BoundBox
-
-class Interval:
-    """
-    Stores starting and ending interval values used to compute lightening hole
-    placement
-    """
-    def __init__(self, start: float = 0.0, end: float = 0.0):
-        self.start = start
-        self.end = end
-
-    def length(self) -> float:
-        """
-        Provides the length of the interval
-        """
-        return self.end-self.start
-
-    def __str__(self):
-        return "start=" + str(self.start) + ", end=" + str(self.end)
+    
+    def get_excluded_interval(self) -> Interval:
+        bbox = self.get_excluded_region()
+        return Interval(bbox.XMin, bbox.XMax)
 
 class HoleBoundRegion():
     def __init__(
@@ -73,11 +81,182 @@ class HoleBoundGenerator():
         self.inset_width = inset_width
         self.excluded_regions = excluded_regions
 
-    def get_hole_bound_regions(self) -> List[HoleBoundRegion]:
+        # this is a place to keep and delete temporary doc objects for viewing
+        self.show_items: List[App.DocumentObject] = []
 
-        af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width, join=2)
+        self.af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width, join=2)
 
-        return []
+        # create a list of intervals, and make sure they are sorted by starting
+        # value so we can insert properly
+        intf_intervals: List[Interval] = [excl.get_excluded_interval() for excl in self.excluded_regions]
+        intf_intervals.sort()
+
+        # first, calculate the nominal max hole width; this will be used to calculate
+        # the number of holes in each of the space intervals between interferences
+        inner_profile_bbox = self.af_inner_profile.BoundBox
+    
+        profile_interval = Interval(inner_profile_bbox.XMin, inner_profile_bbox.XMax)
+        self.hole_intervals: List[HoleBoundRegion] = []
+
+        current_interval = Interval(profile_interval.start, 0.0)
+        for intf_interval in  intf_intervals:
+            current_interval.end = intf_interval.start
+            self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
+            current_interval = Interval(intf_interval.end, 0.0)
+        current_interval.end = profile_interval.end
+        self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
+
+    def get_hole_bounds(self) -> List[HoleBoundRegion]:
+        return self.hole_intervals
+    
+    def show(self) -> None:
+        
+        af_profile = Part.show(self.af_inner_profile)
+        af_profile.ViewObject.LineColor = utilities.RED(0.5)
+        self.show_items.append(af_profile)
+
+        af_prof_bbox: App.BoundBox = self.af_inner_profile.BoundBox
+
+        y_coord: float = (af_prof_bbox.YMax + af_prof_bbox.YMin)/2
+        box_height: float = af_prof_bbox.YLength
+        for hbr in self.hole_intervals:
+            width: float = hbr.interval.length()
+            placement = utilities.xy_placement.copy()
+            placement.Base.y = y_coord - box_height/2
+            placement.Base.x = hbr.interval.start
+            intv = Draft.make_rectangle(width, box_height, placement, face=False)
+            intv.ViewObject.LineColor = utilities.GREEN(0.5)
+            self.show_items.append(intv)
+
+
+    def unshow(self) -> None:
+        for doc_obj in self.show_items:
+            App.ActiveDocument.removeObject(doc_obj.Name)
+
+class HoleGenerator(ABC):
+    def generate_sketch(self, interval: HoleBoundRegion) -> Sketcher.Sketch:
+        pass
+
+class RoundedTrapezoidSidePoints():
+    def __init__(self, pts: List[App.Vector]) -> None:
+        self.pts = pts
+
+    def is_line(self) -> bool:
+        return len(self.pts) == 2
+    
+    def is_point(self) -> bool:
+        return len(self.pts) == 1
+
+class RoundedTrapezoidControlPoints():
+    def __init__(
+            self,
+            airfoil_profile: Part.Shape,
+            interval: Interval,
+            chamfer_rad: float
+        ) -> None:
+        
+        self.show_items: List[App.DocumentObject] = []
+
+        # control points for the upper and lower surface of the airfoil inner profile
+        self.upper_spline_pts: List[App.Vector] = []
+        self.lower_spline_pts: List[App.Vector] = []
+
+        self.left_side_pts: RoundedTrapezoidSidePoints = \
+            self.__get_side_coords(interval.start, airfoil_profile, chamfer_rad)
+        self.right_side_pts: RoundedTrapezoidSidePoints = \
+            self.__get_side_coords(interval.end, airfoil_profile, chamfer_rad)
+
+
+        # generate control points for the upper and lower splines, which will
+        # hug the airfoil interior profile (airfoil_profile)
+        # TODO: we need to make sure that right_bound-left_bound is greater than
+        #       zero at a minimum, and probably also that it's greater than some
+        #       practical minimum length as well, or the algo below will explode
+        spl_left_bound = interval.start+chamfer_rad
+        spl_right_bound = interval.end-chamfer_rad
+        num_ctl_pts = 5
+        for x_coord in numpy.linspace(spl_left_bound, spl_right_bound, num_ctl_pts):
+            pts = self.__get_intersections(x_coord, airfoil_profile)
+            self.upper_spline_pts.append(pts[0])
+            self.lower_spline_pts.append(pts[1])
+
+    def __get_side_coords(
+            self, 
+            x_position: float, 
+            profile: Part.Shape,
+            chamfer_rad: float
+        ) -> RoundedTrapezoidSidePoints:
+
+        corner_pts: List[App.Vector] = self.__get_intersections(x_position, profile)
+        
+        p1 = corner_pts[0]
+        p2 = corner_pts[1]
+
+        # ensure the distance between p1 and p2 is long enough to fit a non-zero
+        # line segment between the chamfer reference points
+        line_coord_pts: List[App.Vector] = []
+        if p1.distanceToPoint(p2) > 2* chamfer_rad:
+            b1 = App.Vector(p1)
+            b2 = App.Vector(p2)
+            b1.y = b1.y - chamfer_rad
+            b2.y = b2.y + chamfer_rad
+            line_coord_pts = [b1,b2]
+        # if the distance between p1 and p2 is below the min threshold for the
+        # chamfer offset, then just provide a single point midway between p1 and p2
+        else:
+            b1 = (p1 + p2)/2
+            line_coord_pts = [b1]
+
+        return RoundedTrapezoidSidePoints(line_coord_pts)
+
+    def __get_intersections(self, x_position: float, profile: Part.Shape) -> List[App.Vector]:
+        intersections: List[App.Vector] = []
+        edge: Part.Edge
+        normal_plane = Part.Plane(utilities.origin, utilities.z_axis)
+        cut_line = Part.Line(App.Vector(x_position, 0, 0), App.Vector(x_position, 1.0, 0.0))
+        for edge in profile.Edges:
+            curve: Part.Curve = edge.Curve
+            curve = curve.trim(*edge.ParameterRange)
+            pts = curve.intersect2d(cut_line, normal_plane)
+            for pt in pts:
+                intersections.append(App.Vector(pt[0], pt[1], 0))
+            if len(intersections) == 2:
+                break
+        
+        intersections.sort(key=lambda pt: pt.y, reverse=True)
+        return intersections
+    
+    def show(self) -> None:
+        # pts: List[Draft.Point] = utilities.draw_points(self.upper_spline_pts)
+        self.show_items.extend(utilities.draw_points(self.upper_spline_pts))
+        self.show_items.extend(utilities.draw_points(self.lower_spline_pts))
+        self.show_items.extend(utilities.draw_points(self.left_side_pts.pts))
+        self.show_items.extend(utilities.draw_points(self.right_side_pts.pts))
+
+    def unshow(self) -> None:
+        for doc_obj in self.show_items:
+            App.ActiveDocument.removeObject(doc_obj.Name)
+
+class RoundedTrapezoidHoleGenerator(HoleGenerator):
+    def __init__(
+            self,
+            max_chamfer_rad: float,
+            max_hole_length: float,
+            min_hole_spacing: float
+        ) -> None:
+        super().__init__()
+        
+        # self.max_chamfer_rad = max_chamfer_rad
+        # self.max_hole_length = max_hole_length
+        # self.min_hole_spacing = min_hole_spacing
+
+
+        
+
+
+
+    def generate_sketch(self, interval: HoleBoundRegion) -> Sketcher.Sketch:
+        return super().generate_sketch(interval)
 
 class LighteningHoleBounds:
     """
