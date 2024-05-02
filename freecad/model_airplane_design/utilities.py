@@ -1,6 +1,8 @@
+import Draft
 import FreeCAD as App
 import Part
 import numpy
+from typing import List
 
 def TEAL(level: float) -> tuple:
     level = numpy.clip(level, 0.1, 1.0)
@@ -21,6 +23,7 @@ def GREEN(green: float = 1.0) -> tuple:
 def BLUE(blue: float = 1.0) -> tuple:
     return (0.0, 0.0, blue)
 
+origin = App.Vector(0,0,0)
 x_axis = App.Vector(1,0,0)
 y_axis = App.Vector(0,1,0)
 z_axis = App.Vector(0,0,1)
@@ -59,3 +62,13 @@ def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.
     p_t.ViewObject.PointColor = color
     p_t.ViewObject.PointSize = point_size
     return p_t
+
+def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5)) -> None:
+    drawn_pts: List[Draft.Point] = []
+    for pt in pts:
+        pf = Draft.make_point(pt)
+        pf.ViewObject.PointColor = color
+        pf.ViewObject.PointSize = 10.0
+        drawn_pts.append(pf)
+    return drawn_pts
+    
