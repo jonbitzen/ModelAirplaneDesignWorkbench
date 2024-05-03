@@ -33,6 +33,23 @@ class Interval():
         return self.start < other.start
 
 class HoleExclusion():
+    """
+    Stores data that indicates where the hole generator may *not* generate a
+    lightening hole in the wing rib.  Note that the hole exclusion must be in
+    the same plane as the rib airfoil outline sketch
+
+    Parameters
+    ----------
+    geometry: Part.Wire
+        Wire outline of arbitrary excluded geometry, where a lightening hole may
+        not be generated.  The geometry must be planar, and should be a closed
+        wire as well
+    
+    standoff: float
+        Measurement that will be applied to the geometry profile to form an
+        exterior offset.  The exterior offset around the excluded geometry
+        reflects structure that is necessary to support the structure in the rib
+    """
     def __init__(
             self,
             geometry: Part.Wire,
@@ -57,6 +74,20 @@ class HoleExclusion():
         return Interval(bbox.XMin, bbox.XMax)
 
 class HoleBoundRegion():
+    """
+    A region where the hole generator may generate one or more holes in the rib
+    structure
+
+    Parameters
+    ----------
+    af_inner_contour: Part.Shape
+        An interior contour offset from the rib's outer airfoil by some physical
+        measurement
+
+    interval: Interval
+        A measurement along the X-axis which indicates that valid region where
+        the hole generator may generate one or more holes
+    """
     def __init__(
             self, 
             af_inner_contour: Part.Shape, 
@@ -71,6 +102,28 @@ class HoleBoundRegion():
         self.interval = interval        
 
 class HoleBoundGenerator():
+    """
+        Generates one or more HoleBoundRegions inside a rib, such that the
+        HoleBoundRegions do not intersect with a list of excluded regions where
+        holes may not be drawn.  The hole generator may generate one or more
+        holes within each HoleBoundRegion
+
+        Parameters
+        ----------
+
+        airfoil_sk: Sketcher.Sketch
+            an airfoil sketch object, which represents the outer physical boundary
+            of the rib
+        
+        inset_width: float
+            a measurement for the inner contour to be drawn from within the rib
+            airfoil; this will form the outer boundary for all holes generated
+            by the hole generator
+
+        excluded_regions: List[HoleExclusion]
+            a list of areas (including an optional keep-out margin) where holes
+            may not be drawn by the hole generator
+    """
     def __init__(
             self,
             airfoil_sk: Sketcher.Sketch,
@@ -107,10 +160,17 @@ class HoleBoundGenerator():
         self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
 
     def get_hole_bounds(self) -> List[HoleBoundRegion]:
+        """
+        The list of valid regions where the hole generator may draw rib lightening
+        holes
+        """
         return self.hole_intervals
     
     def show(self) -> None:
-        
+        """
+        This utility method draws reference geometry to display the rib inner
+        profile, as well as the valid hole intervals in the X axis as boxes
+        """
         af_profile = Part.show(self.af_inner_profile)
         af_profile.ViewObject.LineColor = utilities.RED(0.5)
         self.show_items.append(af_profile)
@@ -128,26 +188,65 @@ class HoleBoundGenerator():
             intv.ViewObject.LineColor = utilities.GREEN(0.5)
             self.show_items.append(intv)
 
-
     def unshow(self) -> None:
+        """
+        This utility clears any previously drawn reference geometry
+        """
         for doc_obj in self.show_items:
             App.ActiveDocument.removeObject(doc_obj.Name)
 
 class HoleGenerator(ABC):
+    """
+    Interface for classes that will draw lightening holes inside a wing rib
+    """
     def generate_sketch(self, interval: HoleBoundRegion) -> Sketcher.Sketch:
         pass
 
 class RoundedTrapezoidSidePoints():
+    """
+    Helper class which encapsulates control points for the end-caps of a rounded
+    trapezoidal lightening hole.
+
+    Parameters
+    ----------
+    pts: List[App.Vector]
+        List of points indicating the geometry of the end-cap.  If one point is
+        provided, then the end cap is a rounded.  If two points are provided, the
+        end cap is a line
+    """
     def __init__(self, pts: List[App.Vector]) -> None:
         self.pts = pts
 
     def is_line(self) -> bool:
+        """
+        Indicates whether the end cap represents a line
+        """
         return len(self.pts) == 2
     
     def is_point(self) -> bool:
+        """
+        Indicates whether the end cap represents a rounded area
+        """
         return len(self.pts) == 1
 
 class RoundedTrapezoidControlPoints():
+    """
+    Contains the control points used to generate a single rounded trapezoidal rib
+    lightening hole
+
+    Parameters
+    ----------
+    airfoil_profile: Part.Shape
+        the inner profile in the rib, which forms the outermost upper and lower
+        bound for the rounded trapezoidal hole
+    
+    interval: Interval
+        represents the X coordinate left and right bounds for the proposed hole
+
+    chamfer_rad: float
+        maximum radius of the rounded chamfers that join the left and right
+        vertical hole lines to the upper and lower hole surfaces
+    """
     def __init__(
             self,
             airfoil_profile: Part.Shape,
@@ -186,6 +285,26 @@ class RoundedTrapezoidControlPoints():
             profile: Part.Shape,
             chamfer_rad: float
         ) -> RoundedTrapezoidSidePoints:
+        """
+            Generates end cap coordinates for one side of the rounded trapezoidal
+            hole.  The end cap side should include a line and two chamfers if 
+            possible.  If the available space between the upper and lower surfaces
+            of the airfoil inner profile is less than two chamfer radii, a single
+            mid-point is generated instead, which is where two chamfer arcs will
+            be joined without a line between them
+
+            Parameters
+            ----------
+            x_position: float
+                location along the X axis where the end cap coordinates should be
+                generated
+
+            profile: Part.Shape
+                inner contour with respect to the rib's airfoil shape
+
+            chamfer_rad: float
+                the maximum radius allowed for the chamfer
+        """
 
         corner_pts: List[App.Vector] = self.__get_intersections(x_position, profile)
         
@@ -209,7 +328,26 @@ class RoundedTrapezoidControlPoints():
 
         return RoundedTrapezoidSidePoints(line_coord_pts)
 
-    def __get_intersections(self, x_position: float, profile: Part.Shape) -> List[App.Vector]:
+    def __get_intersections(
+            self, 
+            x_position: float, 
+            profile: Part.Shape
+        ) -> List[App.Vector]:
+        """
+            Locates the intersections between an infinite line drawn at the
+            x_position, going up and down in the Y direction with the airfoil
+            interior profile.
+
+            Parameters
+            ----------
+            x_position: float
+                location along the X axis where the line should be drawn in the
+                Y direction, in order to cut the airfoil inner profile in two 
+                places
+
+            profile: Part.Shape
+                airfoil inner profile
+        """
         intersections: List[App.Vector] = []
         edge: Part.Edge
         normal_plane = Part.Plane(utilities.origin, utilities.z_axis)
@@ -227,7 +365,6 @@ class RoundedTrapezoidControlPoints():
         return intersections
     
     def show(self) -> None:
-        # pts: List[Draft.Point] = utilities.draw_points(self.upper_spline_pts)
         self.show_items.extend(utilities.draw_points(self.upper_spline_pts))
         self.show_items.extend(utilities.draw_points(self.lower_spline_pts))
         self.show_items.extend(utilities.draw_points(self.left_side_pts.pts))
@@ -238,6 +375,21 @@ class RoundedTrapezoidControlPoints():
             App.ActiveDocument.removeObject(doc_obj.Name)
 
 class RoundedTrapezoidHoleGenerator(HoleGenerator):
+    """
+    Generates one or more rounded trapezoidal hole in a single HoleBoundingRegion
+
+    Parameters
+    ----------
+    max_chamfer_rad: float
+        maximum radius for chamfers at the corners between end cap lines and the
+        upper or lower spline curves that form the hole
+
+    max_hole_length: float
+        maximum length that holes generated in the HoleBoundingRegion may be
+
+    min_hole_spacing: float
+        minumum material that separates each generated hole in the HoleBoundingRegion
+    """
     def __init__(
             self,
             max_chamfer_rad: float,
@@ -250,13 +402,19 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
         # self.max_hole_length = max_hole_length
         # self.min_hole_spacing = min_hole_spacing
 
-
-        
-
-
-
     def generate_sketch(self, interval: HoleBoundRegion) -> Sketcher.Sketch:
-        return super().generate_sketch(interval)
+        """
+        Generate a sketch representing one or more rounded trapezoidal lightening
+        holes inside the given HoleboundingRegion
+
+        Parameters
+        ----------
+        interval: HoleBoundRegion
+            a region where the hole generator may generate one or more rib
+            lightening holes
+        """
+        pass
+        
 
 class LighteningHoleBounds:
     """

@@ -126,6 +126,17 @@ class AirfoilData:
         """
         Scales the master airfoil sketch to the desired chord size, returns an
         editable SketchObject
+
+        Parameters
+        ----------
+        chord: float
+            The length of the airfoil from leading edge to trailing edge
+
+        Return
+        ------
+        Sketcher.Sketch
+            A fully constrained sketch derived from the airfoil data file
+            coordinates, scaled to the user-designated chord length
         """
         scaled_af_shape = self.to_shape(chord)
         return Draft.make_sketch(scaled_af_shape, autoconstraints=True, name=self.name+"-sketch")
