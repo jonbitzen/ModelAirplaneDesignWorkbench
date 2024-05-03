@@ -24,6 +24,10 @@ def create(
     return obj
 
 class Rib():
+    """
+        Proxy class that handles wing rib generation logic on behalf of a 
+        Part::FeaturePython instance
+    """
     def __init__(
             self,
             obj: App.DocumentObject
@@ -58,7 +62,19 @@ class Rib():
         obj.Proxy = self
 
     def add_cut(self, other_solid: Part.Feature) -> None:
-        
+        """
+        Adds a cut into the rib solid, and registers a section derived from the
+        cut as an exclusion region so that other rib structures may not be
+        generated there
+
+        Parameters
+        ----------
+        other_solid: Part.Feature
+            The solid feature that will intersect with the wing rib and generate
+            a cut and an exclusion region
+
+        """
+
         # TODO: store the name of the feature used to do the cut, and make a
         #       mapping to the originating feature and its cut, so that we can
         #       - remove cut features
@@ -169,6 +185,10 @@ class Rib():
             App.ActiveDocument.removeObject(intersection.Name)
 
 class RibViewProvider():
+    """
+        Proxy class that handles wing rib view operations on behalf of a 
+        Part::FeaturePython class' ViewProvider member
+    """
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
         vobj.Proxy = self
         self.Object = vobj.Object
