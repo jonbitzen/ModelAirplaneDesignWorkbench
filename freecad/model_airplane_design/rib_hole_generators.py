@@ -541,8 +541,6 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             # if the space was too small to form a line with the target offset, then
             # we create two arcs and join them directly, without a line in the middle
             if line is None:
-                # p1 = chamfer_pts[0]
-                # p2 = chamfer_pts[1]
                 p1 = upper_spl_pt
                 p2 = lower_spl_pt
 
