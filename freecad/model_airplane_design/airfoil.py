@@ -2,6 +2,7 @@ import Draft
 from enum import Enum
 import FreeCAD as App
 import numpy
+import os.path
 import Part
 from pathlib import Path
 import Sketcher
@@ -16,14 +17,75 @@ class TrailingEdgeType(Enum):
     LINE = 1
     ROUNDED = 2
 
+
+# TODO: I think one way for this to work is for the user to add some small set
+#       of airfoils to the project.  That's probably a sane choice, since there
+#       are over 1600, and it'll make subsequent choices easier since you probably
+#       only work with a small subset anyway.  I think the trick may be, then,
+#       to create the set of available airfoils using all-caps strings in the
+#       FreeCAD enum set
+class AirfoilType(Enum):
+    CLARKY = 1
+    GOE173 = 2
+    NACA2411 = 3
+    NACA654221 = 4
+
+    @classmethod
+    def to_filename(self, airfoil_type: str) -> str:
+        """
+        Gets the filepath for a stringified version of an AirfoilType enum value
+
+        Parameters
+        ----------
+        airfoil_type : str
+            The AirfoilType enum value as a string (e.g., "CLARKY", GOE173, etc.)
+
+        Return
+        ------
+        str
+            A filepath for a dat file containing coordinates for the requested
+            airfoil    
+        
+        """
+        match airfoil_type:
+            case AirfoilType.CLARKY.name:
+                return "~/Documents/airfoil-data/clarky.dat"
+            case AirfoilType.GOE173.name:
+                return "~/Documents/airfoil-data/goe173.dat"
+            case AirfoilType.NACA2411.name:
+                return "~/Documents/airfoil-data/naca2411.dat"
+            case AirfoilType.NACA654221.name:
+                return "~/Documents/airfoil-data/naca654221.dat"
+            case _:
+                print("AirfoilType.to_filename - unknown airfoil type \"" + airfoil_type + "\"")
+                return None
+
 class AirfoilData:
     """
-    Container for a set of airfoil coordinates in Lednicer format, where
-    coordinates originate from the upper airfoil surface trailing edge, and wind
-    counter-clockwise through the leading edge and back again to the lower air-
-    foil surface trailing edge
-    The coordinates stored are the orignal coordinates from the file, and hence
-    may not necessarily form a closed loop of edges
+    Stores airfoil coordinate data loaded from a dat file, and provides factory-
+    like methods to create useful FreeCAD representations of the airfoil data
+    for solid modeling
+
+    Parameters
+    ----------
+    coords : List[App.Vector]
+        Original coordinate data loaded from file, in Lednicer format, counter-
+        clockwise winding from the top surface trailing edge, through the leading-
+        edge, and around back to the lower surface trailing edge.  Note that
+        the coordinate from the original file may not necessarily form a closed
+        loop
+
+    name : str
+        Human-friendly name of the airfoil data
+
+    filename : str
+        Orginal source filename for the dat file where the airfoil coordinates
+        were obtained
+
+    type : FileType
+        Coordinate encoding in the original source data file.  May be one of
+        {SELIG, LEDNICER}
+
     """
     def __init__(self, 
             coords: List[App.Vector], 
@@ -36,17 +98,75 @@ class AirfoilData:
         self.type =type
         self.master_sketch = self.__to_master_sketch()
 
-    def to_sketch(self, chord: float) -> Sketcher.Sketch:
+    def to_shape(self, chord: float) -> Part.Shape:
+        """
+        Scales the master airfoil sketchto the desired chord size, returns a
+        Shape
 
+        Parameters
+        ----------
+        chord : float
+            The rib chord is the distance from the airfoil leading edge to its
+            trailing edge
+
+        Returns
+        -------
+        Part.Shape
+            A version of the master airfoil shape scaled to have the user-
+            directed chord length
+
+        """
         scale_factor = chord / self.master_sketch.Shape.BoundBox.XLength
         scaled_af_shape = self.master_sketch.Shape.copy()
         scaled_af_shape.scale(scale_factor)
+        return scaled_af_shape
+
+
+    def to_sketch(self, chord: float) -> Sketcher.Sketch:
+        """
+        Scales the master airfoil sketch to the desired chord size, returns an
+        editable SketchObject
+
+        Parameters
+        ----------
+        chord: float
+            The length of the airfoil from leading edge to trailing edge
+
+        Return
+        ------
+        Sketcher.Sketch
+            A fully constrained sketch derived from the airfoil data file
+            coordinates, scaled to the user-designated chord length
+        """
+        scaled_af_shape = self.to_shape(chord)
         return Draft.make_sketch(scaled_af_shape, autoconstraints=True, name=self.name+"-sketch")
 
     def __to_master_sketch(self, trailing_edge_type=TrailingEdgeType.LINE) -> Sketcher.Sketch:
         """
         Generate a fully-constrained sketch from the internally held Lednicer-type 
-        coordinates
+        coordinates.  The airfoil edges derived from the coordinates will be
+        generated as a BSpline
+
+        Parameters
+        ----------
+        trailing_edge_type : TrailingEdgeType
+            An enum arg that indicates how to close the airfoil BSpline if the
+            trailing edge coordinates for an open loop:
+                LINE 
+                    a line will be drawn between the open trailing edge coordinates. 
+                ROUNDED
+                    a pair of circular arcs will close the open trailing edge
+                    coordinates.  Arcs will be constrained such that all joining
+                    edges will be tangent to one another and to the airfoil
+                    BSpline endoiints
+
+        Return
+        ------
+        Sketcher.Sketch
+            A fully constrained Sketch derived from the dat file coordinates.
+            Note that the master sketch is not a DocumentObject, and hence is
+            not a displayable entity
+
         """
         af_sk = Sketcher.Sketch()
         
@@ -121,10 +241,21 @@ def load(filename: str) -> AirfoilData:
     """
     Load airfoil coordinates from a .dat file.  Coordinates may be in either Selig
     or Lednicer format
+
+    Parameters
+    ---------
+    filename : str
+        fully-qualified filepath of a dat file containing airfoil coordinates
+
+    Return
+    ------
+    AirfoilData
+        A factory object which wraps the data from the dat file.  May be used to
+        create various entities useful for solid modeling.
     """
     airfoil_name = Path(filename).stem
 
-    raw_coords = numpy.loadtxt(filename, skiprows=1)
+    raw_coords = numpy.loadtxt(os.path.expanduser(filename), skiprows=1)
 
     # Selig contains an initial coordinate pair which represents the number of 
     # coordinates for the upper and lower airfoil surface, which will always 
@@ -151,6 +282,16 @@ def __coords_from_selig(raw_coords: numpy.ndarray) -> List[App.Vector]:
     """
     Convert numpy coordinates in Selig format to Lednicer format in FreeCAD
     App.Vector coordinates
+
+    Parameters
+    ----------
+    raw_coords : numpy.ndarray
+        Airfoil coordinates in Selig format
+
+    Return
+    ------
+    List[App.Vector]
+        Airfoil coordinates in Lednicer format, using FreeCAD types
     """
     # the first pair of numbers is the number of coordinate rows for the upper
     # and lower airfoil surface
@@ -170,6 +311,17 @@ def __coords_from_selig(raw_coords: numpy.ndarray) -> List[App.Vector]:
 def __coords_from_lednicer(raw_coords: numpy.ndarray) -> List[App.Vector]:
     """
     Convert numpy coordinates to a list of FreeCAD App.Vector coords
+
+    Parameters
+    ----------
+    raw_coords : numpy.ndarray
+        Airfoil coordinates in Lednicer format
+
+    Return
+    ------
+    List[App.Vector]
+        Coordinates in Lednicer format, using FreeCAD types
+
     """
     coords: List[App.Vector] = [App.Vector(pt[0], pt[1], 0.0) for pt in raw_coords]
     return coords

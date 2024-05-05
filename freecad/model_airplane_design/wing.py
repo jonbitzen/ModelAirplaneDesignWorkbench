@@ -1,4 +1,3 @@
-from . import rib_hole_generators
 from . import utilities
 import Draft
 from enum import Enum
@@ -325,12 +324,6 @@ class Wing():
         rs_loft = self.__make_spar("rear-spar", r0, 0.33, r2, 0.5, 3.0, 3.0, WingEdge.TRAILING)
         self.__make_spar_penetrations(rib_list, rs_loft)
         
-        # generate the lightening hole sketches
-        for rib in rib_list:
-            lh_sk = rib_hole_generators.create_lightening_hole_sketch(rib.airfoil, rib.interferences)
-            rib.structure = lh_sk
-            obj.addObject(lh_sk)
-
         # Add this last, or chaos ensues
         obj.Proxy = self
 
