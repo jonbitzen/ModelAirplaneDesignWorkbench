@@ -84,6 +84,14 @@ class Rib():
         #       standoff to use for the cut feature, since you may need different
         #       amounts of structure around the cut, depending on what it is
 
+        # TODO: better yet, we might even like to store a reference to the
+        #       interfering object, that way when we move things around a little
+        #       we don't need to explicitly go and re-create all the interference
+        #       sections, we can just recompute them by iterating over the list
+        #       of things again.  Plus it might be easier to keep a list of
+        #       object's we're currently checking, and evict them from the UI
+        #       later
+
         # these start out in the xy plane
         af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
         af_sketch.Placement = self.Object.Placement
@@ -132,57 +140,70 @@ class Rib():
 
     def execute(self, obj: App.DocumentObject) -> None:
         self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
+
+        # register temporary doc objects here, so they can be easily disposed
+        # when we're done with them
+        tmp_to_delete: List[Part.Feature] = []
+
         tmp_placement: App.Placement = obj.Placement
 
         tmp_af: Sketcher.SketchObject = self.airfoil_data.to_sketch(obj.getPropertyByName("chord"))
         tmp_af.recompute()
+        tmp_to_delete.append(tmp_af)
+
         tmp_body: PartDesign.Body = App.ActiveDocument.addObject("PartDesign::Body", "tmp_body")
+        tmp_to_delete.append(tmp_body)
+
         tmp_pad = tmp_body.newObject("PartDesign::Pad", "tmp_pad")
         tmp_pad.Profile = tmp_af
         tmp_pad.Length = obj.getPropertyByName("thickness")
         tmp_pad.recompute()
+        tmp_to_delete.append(tmp_pad)
 
         tmp_pkt = None
         tmp_sketch = None
         if len(self.intersections) > 0:
             tmp_sketch = Draft.make_sketch(self.intersections, autoconstraints=True, name="tmp_sk")
             tmp_sketch.recompute()
+            tmp_to_delete.append(tmp_sketch)
+
             tmp_pkt = tmp_body.newObject("PartDesign::Pocket", "tmp_pkt")
             tmp_pkt.Profile = tmp_sketch
             tmp_pkt.Length = 2*obj.getPropertyByName("thickness")
             tmp_pkt.Midplane = True
             tmp_pkt.recompute()
+            tmp_to_delete.append(tmp_pkt)
 
-        intersection_sketches: List[Sketcher.Sketch] = []
-        for intersection in self.intersections:
-            sk = Draft.make_sketch([intersection], autoconstraints=True, name="tmp_sk")
-            sk.recompute()
-            intersection_sketches.append(sk)
+        exclusions: List[rhg.HoleExclusion] = []
+        for iw in self.intersections:
+            exclusions.append(rhg.HoleExclusion(Part.Wire(iw.Edges), 2.0))
 
-        lh_sk = rhg.create_lightening_hole_sketch(tmp_af, intersection_sketches)
-        lh_sk.recompute()
-        lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
-        lh_pkt.Profile = lh_sk
-        lh_pkt.Length = 2*obj.getPropertyByName("thickness")
-        lh_pkt.Midplane = True
-        lh_pkt.recompute()
+        hbg =rhg.HoleBoundGenerator(tmp_af, 2.0, exclusions)
+
+        hbr_list = hbg.get_hole_bounds()
+
+        max_hole_length = obj.getPropertyByName("chord") / 6
+
+        hbg = rhg.RoundedTrapezoidHoleGenerator(2.0, max_hole_length, 2.0)
+        for hbr in hbr_list:
+            lh_sk = hbg.generate_sketch(hbr)
+            lh_sk.recompute()
+            tmp_to_delete.append(lh_sk)
+
+            lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
+            lh_pkt.Profile = lh_sk
+            lh_pkt.Length = 2*obj.getPropertyByName("thickness")
+            lh_pkt.Midplane = True
+            lh_pkt.recompute()
+            tmp_to_delete.append(lh_pkt)
 
         tmp_body.recompute()
 
         obj.Shape = tmp_body.Shape.copy()
         obj.Placement = tmp_placement
 
-        if tmp_pkt is not None:
-            App.ActiveDocument.removeObject(tmp_pkt.Name)
-            App.ActiveDocument.removeObject(tmp_sketch.Name)
-        App.ActiveDocument.removeObject(tmp_body.Name)
-        App.ActiveDocument.removeObject(tmp_af.Name)
-        App.ActiveDocument.removeObject(tmp_pad.Name)
-        App.ActiveDocument.removeObject(lh_sk.Name)
-        App.ActiveDocument.removeObject(lh_pkt.Name)
-
-        for intersection in intersection_sketches:
-            App.ActiveDocument.removeObject(intersection.Name)
+        for tmp_ft in tmp_to_delete:
+            App.ActiveDocument.removeObject(tmp_ft.Name)
 
 class RibViewProvider():
     """
