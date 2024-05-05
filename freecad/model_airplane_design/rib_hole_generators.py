@@ -64,14 +64,10 @@ class HoleExclusion():
 
         self.geometry = geometry
         self.standoff = standoff
-
-    def get_excluded_region(self) -> App.BoundBox:
-        region = self.geometry.makeOffset2D(self.standoff, join=2)
-        return region.BoundBox
     
     def get_excluded_interval(self) -> Interval:
-        bbox = self.get_excluded_region()
-        return Interval(bbox.XMin, bbox.XMax)
+        bbox = self.geometry.BoundBox
+        return Interval(bbox.XMin-self.standoff, bbox.XMax+self.standoff)
 
 class HoleBoundRegion():
     """
@@ -584,8 +580,8 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
 
                 constraints.append(Sketcher.Constraint("Tangent", lower_bsp_id, bsp_pt_id, id_arc_bottom, arc_pt_id))
                 constraints.append(Sketcher.Constraint("Tangent", id_arc_top, top_arc_other_id, id_arc_bottom, bottom_arc_other_id))
-            # we have a line in the middle, so create arcs that join the line on each
-            # end to the top and bottom spline sections
+            # we have a line in the middle, so create arcs that join the line on
+            # each end to the top and bottom spline sections
             else:
                 arc_radius = max_chamfer_rad
                 top_arc_center = App.Vector(upper_spl_pt.x, line.StartPoint.y, 0.0)
@@ -650,7 +646,6 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             hole_width = total_hole_width/num_segments
 
             dist = bdg_region.interval.start
-            # for idx in range(0,num_segments-1):
             for idx in range(0,num_segments):
                 # get the endpoints for the hole
                 start = dist
