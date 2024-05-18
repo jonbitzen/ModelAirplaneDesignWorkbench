@@ -10,6 +10,9 @@ import Part
 import Sketcher
 from typing import List, Dict
 
+class HoleGeneratorType(Enum):
+    NONE = 1
+    ROUNDED_TRAPEZOID = 2
 
 class Interval():
     """
@@ -134,8 +137,8 @@ class HoleBoundGenerator():
 
         # this is a place to keep and delete temporary doc objects for viewing
         self.show_items: List[App.DocumentObject] = []
-
         self.af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width, join=2)
+        self.af_inner_profile.tessellate(0.01)
 
         # create a list of intervals, and make sure they are sorted by starting
         # value so we can insert properly
@@ -706,4 +709,20 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
 
         sk.addConstraint(constraints)
 
-        return sk            
+        return sk
+    
+class HoleGeneratorFactory():
+    @staticmethod
+    def create_generator(generator_type: str, chord_param: float) -> HoleGenerator:
+        match generator_type:
+            case HoleGeneratorType.NONE.name:
+                return None
+            case HoleGeneratorType.ROUNDED_TRAPEZOID.name:
+                scale_factor = chord_param/175.0
+                chamfer_rad: float = scale_factor*2.0
+                max_hole_width: float = scale_factor*(100.0/6)
+                min_hole_spacing: float = scale_factor*2.0
+                return RoundedTrapezoidHoleGenerator(chamfer_rad, max_hole_width, min_hole_spacing)
+            case _:
+                print("HoleGeneratorFactory.create_generator: unknown generator")
+                return None

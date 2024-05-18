@@ -56,6 +56,13 @@ class Rib():
             "Airfoil type"
         ).airfoil = [e.name for e in airfoil.AirfoilType]
 
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "hole_type",
+            "Rib",
+            "Lightening hole type"
+        ).hole_type = [e.name for e in rhg.HoleGeneratorType]
+
         self.intersections: List[Part.Shape] = []
 
         self.Object = obj
@@ -132,7 +139,7 @@ class Rib():
         # TODO: why is it that when we change a number like the chord we dont
         #       need to explicitly call execute, but when we change the airfoil
         #       we do?     
-        if property == "airfoil":
+        if property == "airfoil" or property == "hole_type":
             self.execute(obj)
 
     def attach(self, obj: App.DocumentObject) -> None:
@@ -175,27 +182,36 @@ class Rib():
             tmp_to_delete.append(tmp_pkt)
 
         exclusions: List[rhg.HoleExclusion] = []
+        scale_factor: float = obj.chord / 175.0
         for iw in self.intersections:
-            exclusions.append(rhg.HoleExclusion(Part.Wire(iw.Edges), 2.0))
+            rib_pen_standoff: float = scale_factor * 2.0
+            exclusions.append(rhg.HoleExclusion(Part.Wire(iw.Edges), rib_pen_standoff))
 
-        hbg =rhg.HoleBoundGenerator(tmp_af, 2.0, exclusions)
+        inner_profile_standoff: float = scale_factor * 2.0
+        hbg =rhg.HoleBoundGenerator(tmp_af, inner_profile_standoff, exclusions)
 
         hbr_list = hbg.get_hole_bounds()
 
-        max_hole_length = obj.getPropertyByName("chord") / 6
+        # TODO: eventually what we're going to want is the enum field which allows
+        #       you to select from one of several hole generators, and then a
+        #       python object field which can raise a custom form for each
+        #       generators parameters.  Maybe when these things are created by
+        #       default we pass in the rib chord, so that a set of reasonable
+        #       initial parameters can be chosen when constructing the generator
+        #       for now, lets do something simple
+        hbg = rhg.HoleGeneratorFactory.create_generator(obj.hole_type, obj.chord)
+        if hbg is not None:
+            for hbr in hbr_list:
+                lh_sk = hbg.generate_sketch(hbr)
+                lh_sk.recompute()
+                tmp_to_delete.append(lh_sk)
 
-        hbg = rhg.RoundedTrapezoidHoleGenerator(2.0, max_hole_length, 2.0)
-        for hbr in hbr_list:
-            lh_sk = hbg.generate_sketch(hbr)
-            lh_sk.recompute()
-            tmp_to_delete.append(lh_sk)
-
-            lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
-            lh_pkt.Profile = lh_sk
-            lh_pkt.Length = 2*obj.getPropertyByName("thickness")
-            lh_pkt.Midplane = True
-            lh_pkt.recompute()
-            tmp_to_delete.append(lh_pkt)
+                lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
+                lh_pkt.Profile = lh_sk
+                lh_pkt.Length = 2*obj.getPropertyByName("thickness")
+                lh_pkt.Midplane = True
+                lh_pkt.recompute()
+                tmp_to_delete.append(lh_pkt)
 
         tmp_body.recompute()
 
