@@ -70,8 +70,6 @@ class Rib():
             "Other solids that intersect the rib"
         ).intersections = []
 
-        self.intersections: List[Part.Shape] = []
-
         self.Object = obj
         obj.Proxy = self
 
