@@ -63,12 +63,19 @@ class Rib():
             "Lightening hole type"
         ).hole_type = [e.name for e in rhg.HoleGeneratorType]
 
+        obj.addProperty(
+            "App::PropertyLinkList",
+            "intersections",
+            "Rib",
+            "Other solids that intersect the rib"
+        ).intersections = []
+
         self.intersections: List[Part.Shape] = []
 
         self.Object = obj
         obj.Proxy = self
 
-    def add_cut(self, other_solid: Part.Feature) -> None:
+    def __add_cut(self, other_solid: Part.Feature) -> Part.Shape:
         """
         Adds a cut into the rib solid, and registers a section derived from the
         cut as an exclusion region so that other rib structures may not be
@@ -82,23 +89,6 @@ class Rib():
 
         """
 
-        # TODO: store the name of the feature used to do the cut, and make a
-        #       mapping to the originating feature and its cut, so that we can
-        #       - remove cut features
-        #       - check whether the cut features have changed in execute, so we
-        #         can skip the hole generation if they havent
-        #       Also I think this is a natural place to add a parameter for the
-        #       standoff to use for the cut feature, since you may need different
-        #       amounts of structure around the cut, depending on what it is
-
-        # TODO: better yet, we might even like to store a reference to the
-        #       interfering object, that way when we move things around a little
-        #       we don't need to explicitly go and re-create all the interference
-        #       sections, we can just recompute them by iterating over the list
-        #       of things again.  Plus it might be easier to keep a list of
-        #       object's we're currently checking, and evict them from the UI
-        #       later
-
         # these start out in the xy plane
         af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
         af_sketch.Placement = self.Object.Placement
@@ -111,22 +101,17 @@ class Rib():
         sec.Tool = rib_face
         sec.recompute()
 
-        # TODO: Since these exclusion/intersections MUST be in the XY plane, we
-        #       probably ought to force them to be initialized in a way such that
-        #       is *always* true, or that we at least guide ourselves to make it
-        #       so
         # store intersections in the XY plane - when we calculate the lightening
         # holes, we will do everything on the "base" airfoil template scaled to
         # the correct chord, and then transform the hole sketch back into the
         # Rib's Placement
         new_intersection = sec.Shape.transformGeometry(self.Object.Placement.Matrix.inverse())
-        self.intersections.append(new_intersection)
 
         App.ActiveDocument.removeObject(af_sketch.Name)
         App.ActiveDocument.removeObject(sec.Name)
         App.ActiveDocument.removeObject(rib_face.Name)
 
-        self.execute(self.Object)
+        return new_intersection
 
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
@@ -136,11 +121,11 @@ class Rib():
         objects that may be added explictly by the user
         """  
 
-        # TODO: why is it that when we change a number like the chord we dont
-        #       need to explicitly call execute, but when we change the airfoil
-        #       we do?     
-        if property == "airfoil" or property == "hole_type":
-            self.execute(obj)
+        match property:
+            case "airfoil" | "hole_type" | "intersections":
+                self.execute(obj)
+            case _:
+                pass
 
     def attach(self, obj: App.DocumentObject) -> None:
         pass
@@ -169,8 +154,15 @@ class Rib():
 
         tmp_pkt = None
         tmp_sketch = None
-        if len(self.intersections) > 0:
-            tmp_sketch = Draft.make_sketch(self.intersections, autoconstraints=True, name="tmp_sk")
+
+        cuts: List[Part.Shape] = []
+        for intersection in obj.intersections:
+            cut = self.__add_cut(intersection)
+            if cut is not None:
+                cuts.append(cut)
+
+        if len(cuts) > 0:
+            tmp_sketch = Draft.make_sketch(cuts, autoconstraints=True, name="tmp_sk")
             tmp_sketch.recompute()
             tmp_to_delete.append(tmp_sketch)
 
@@ -183,9 +175,9 @@ class Rib():
 
         exclusions: List[rhg.HoleExclusion] = []
         scale_factor: float = obj.chord / 175.0
-        for iw in self.intersections:
+        for cut in cuts:
             rib_pen_standoff: float = scale_factor * 2.0
-            exclusions.append(rhg.HoleExclusion(Part.Wire(iw.Edges), rib_pen_standoff))
+            exclusions.append(rhg.HoleExclusion(Part.Wire(cut.Edges), rib_pen_standoff))
 
         inner_profile_standoff: float = scale_factor * 2.0
         hbg =rhg.HoleBoundGenerator(tmp_af, inner_profile_standoff, exclusions)
