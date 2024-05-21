@@ -66,6 +66,7 @@ class HoleExclusion():
             raise ValueError("Hole exclusion standoff must not be negative")
 
         self.geometry = geometry
+        self.geometry.tessellate(0.01)
         self.standoff = standoff
     
     def get_excluded_interval(self) -> Interval:
