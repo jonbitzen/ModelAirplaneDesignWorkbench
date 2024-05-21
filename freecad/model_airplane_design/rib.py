@@ -167,10 +167,7 @@ class Rib():
         # TODO: eventually what we're going to want is the enum field which allows
         #       you to select from one of several hole generators, and then a
         #       python object field which can raise a custom form for each
-        #       generators parameters.  Maybe when these things are created by
-        #       default we pass in the rib chord, so that a set of reasonable
-        #       initial parameters can be chosen when constructing the generator
-        #       for now, lets do something simple
+        #       generators parameters.  
         hbg = rhg.HoleGeneratorFactory.create_generator(obj.hole_type, obj.chord)
         if hbg is not None:
             for hbr in hbr_list:
