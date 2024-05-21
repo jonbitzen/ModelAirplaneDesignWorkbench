@@ -141,18 +141,7 @@ class Rib():
         tmp_af.recompute()
         tmp_to_delete.append(tmp_af)
 
-        tmp_body: PartDesign.Body = App.ActiveDocument.addObject("PartDesign::Body", "tmp_body")
-        tmp_to_delete.append(tmp_body)
-
-        tmp_pad = tmp_body.newObject("PartDesign::Pad", "tmp_pad")
-        tmp_pad.Profile = tmp_af
-        tmp_pad.Length = obj.getPropertyByName("thickness")
-        tmp_pad.recompute()
-        tmp_to_delete.append(tmp_pad)
-
-        tmp_pkt = None
-        tmp_sketch = None
-
+        # TODO: need to re-insert the cuts from other members
         cuts: List[Part.Shape] = []
         for intersection in obj.intersections:
             cut = self.__add_cut(intersection)
@@ -160,16 +149,10 @@ class Rib():
                 cuts.append(cut)
 
         if len(cuts) > 0:
-            tmp_sketch = Draft.make_sketch(cuts, autoconstraints=True, name="tmp_sk")
+            tmp_sketch: Sketcher.Sketch = Draft.make_sketch(cuts, autoconstraints=True, name="tmp_sk")
             tmp_sketch.recompute()
             tmp_to_delete.append(tmp_sketch)
-
-            tmp_pkt = tmp_body.newObject("PartDesign::Pocket", "tmp_pkt")
-            tmp_pkt.Profile = tmp_sketch
-            tmp_pkt.Length = 2*obj.getPropertyByName("thickness")
-            tmp_pkt.Midplane = True
-            tmp_pkt.recompute()
-            tmp_to_delete.append(tmp_pkt)
+            tmp_af.addGeometry(tmp_sketch.Geometry)
 
         exclusions: List[rhg.HoleExclusion] = []
         scale_factor: float = obj.chord / 175.0
@@ -195,17 +178,18 @@ class Rib():
                 lh_sk = hbg.generate_sketch(hbr)
                 lh_sk.recompute()
                 tmp_to_delete.append(lh_sk)
+                tmp_af.addGeometry(lh_sk.Geometry)
+                
+        tmp_af.recompute()        
 
-                lh_pkt = tmp_body.newObject("PartDesign::Pocket", "lh_pkt")
-                lh_pkt.Profile = lh_sk
-                lh_pkt.Length = 2*obj.getPropertyByName("thickness")
-                lh_pkt.Midplane = True
-                lh_pkt.recompute()
-                tmp_to_delete.append(lh_pkt)
-
-        tmp_body.recompute()
-
-        obj.Shape = tmp_body.Shape.copy()
+        ext = App.ActiveDocument.addObject("Part::Extrusion", "tmp_ext")
+        ext.Base = tmp_af
+        ext.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
+        ext.Solid = True
+        ext.recompute()
+        tmp_to_delete.append(ext)
+        
+        obj.Shape = ext.Shape.copy()
         obj.Placement = tmp_placement
 
         for tmp_ft in tmp_to_delete:
