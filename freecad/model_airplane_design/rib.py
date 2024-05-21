@@ -3,7 +3,6 @@ from . import rib_hole_generators as rhg
 import Draft
 import FreeCAD as App
 import Part
-import PartDesign
 import Sketcher
 from typing import Tuple
 from typing import List
