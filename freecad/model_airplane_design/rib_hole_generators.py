@@ -55,23 +55,18 @@ class HoleExclusion():
     """
     def __init__(
             self,
-            geometry: Part.Wire,
+            bbox: App.BoundBox,
             standoff: float
         ) -> None:
         
-        if not DraftGeomUtils.is_planar(geometry):
-            raise ValueError("Hole exclusion geometry is non-planar")
-
         if standoff < 0.0:
             raise ValueError("Hole exclusion standoff must not be negative")
 
-        self.geometry = geometry
-        self.geometry.tessellate(0.01)
+        self.bbox = bbox
         self.standoff = standoff
     
     def get_excluded_interval(self) -> Interval:
-        bbox = self.geometry.BoundBox
-        return Interval(bbox.XMin-self.standoff, bbox.XMax+self.standoff)
+        return Interval(self.bbox.XMin-self.standoff, self.bbox.XMax+self.standoff)
 
 class HoleBoundRegion():
     """

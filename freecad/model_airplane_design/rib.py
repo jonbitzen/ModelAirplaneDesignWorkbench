@@ -1,6 +1,6 @@
 from . import airfoil
 from . import rib_hole_generators as rhg
-import Draft
+from BOPTools import BOPFeatures
 import FreeCAD as App
 import Part
 import Sketcher
@@ -140,24 +140,22 @@ class Rib():
         tmp_af.recompute()
         tmp_to_delete.append(tmp_af)
 
-        # TODO: need to re-insert the cuts from other members
-        cuts: List[Part.Shape] = []
-        for intersection in obj.intersections:
-            cut = self.__add_cut(intersection)
-            if cut is not None:
-                cuts.append(cut)
+        tmp_ext = App.ActiveDocument.addObject("Part::Extrusion", "tmp_ext")
+        tmp_ext.Base = tmp_af
+        tmp_ext.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
+        tmp_ext.Solid = True
+        tmp_to_delete.append(tmp_ext)
+        tmp_ext.recompute()
 
-        if len(cuts) > 0:
-            tmp_sketch: Sketcher.Sketch = Draft.make_sketch(cuts, autoconstraints=True, name="tmp_sk")
-            tmp_sketch.recompute()
-            tmp_to_delete.append(tmp_sketch)
-            tmp_af.addGeometry(tmp_sketch.Geometry)
-
+        bp = BOPFeatures.BOPFeatures(App.ActiveDocument)
         exclusions: List[rhg.HoleExclusion] = []
         scale_factor: float = obj.chord / 175.0
-        for cut in cuts:
-            rib_pen_standoff: float = scale_factor * 2.0
-            exclusions.append(rhg.HoleExclusion(Part.Wire(cut.Edges), rib_pen_standoff))
+        rib_pen_standoff: float = scale_factor * 2.0
+        for intersection in obj.intersections:
+            c: Part.Feature = bp.make_common([tmp_ext.Name, intersection.Name])
+            c.recompute()
+            exclusions.append(rhg.HoleExclusion(c.Shape.BoundBox, rib_pen_standoff))
+            tmp_to_delete.append(c)
 
         inner_profile_standoff: float = scale_factor * 2.0
         hbg =rhg.HoleBoundGenerator(tmp_af, inner_profile_standoff, exclusions)
@@ -185,6 +183,11 @@ class Rib():
         ext.recompute()
         tmp_to_delete.append(ext)
         
+        for intersection in obj.intersections:
+            ext: Part.Feature = bp.make_cut([ext.Name, intersection.Name])
+            ext.recompute()
+            tmp_to_delete.append(ext)
+
         obj.Shape = ext.Shape.copy()
         obj.Placement = tmp_placement
 
