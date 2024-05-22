@@ -72,45 +72,6 @@ class Rib():
         self.Object = obj
         obj.Proxy = self
 
-    def __add_cut(self, other_solid: Part.Feature) -> Part.Shape:
-        """
-        Adds a cut into the rib solid, and registers a section derived from the
-        cut as an exclusion region so that other rib structures may not be
-        generated there
-
-        Parameters
-        ----------
-        other_solid: Part.Feature
-            The solid feature that will intersect with the wing rib and generate
-            a cut and an exclusion region
-
-        """
-
-        # these start out in the xy plane
-        af_sketch = self.airfoil_data.to_sketch(self.Object.chord)
-        af_sketch.Placement = self.Object.Placement
-        af_sketch.recompute()
-        rib_face: Part.Feature = Part.makeFace([af_sketch.Shape], "Part::FaceMakerSimple")
-        rib_face = Part.show(rib_face)
-        
-        sec: Part.Feature = App.ActiveDocument.addObject("Part::Section", "sec")
-        sec.Base = other_solid
-        sec.Tool = rib_face
-        sec.recompute()
-
-        # store intersections in the XY plane - when we calculate the lightening
-        # holes, we will do everything on the "base" airfoil template scaled to
-        # the correct chord, and then transform the hole sketch back into the
-        # Rib's Placement
-        new_intersection = sec.Shape.transformGeometry(self.Object.Placement.Matrix.inverse())
-
-        App.ActiveDocument.removeObject(af_sketch.Name)
-        App.ActiveDocument.removeObject(sec.Name)
-        App.ActiveDocument.removeObject(rib_face.Name)
-
-        return new_intersection
-
-
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         """
         Called when the FeaturePython object properties change.  Note that this
