@@ -51,18 +51,49 @@ class Wing():
             )
         obj.addObject(obj.planform)
 
+        obj.addProperty(
+            "App::PropertyInteger",
+            "num_ribs",
+            "Wing",
+            "The number of ribs to generate"
+        ).num_ribs = 6
+
+        obj.addProperty(
+            "App::PropertyAngle",
+            "root_cant_angle",
+            "Wing",
+            "Cant angle of the root rib, range -15/+15 degrees"
+        ).root_cant_angle = 0
+
         # Add this last, or chaos ensues
         obj.Proxy = self
 
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
-        print("Wing.onChanged: " + property)
-        
+        do_exec = False
+        match property:
+            case "num_ribs":
+                if obj.num_ribs < 2:
+                    print("Wing.onChanged: number of ribs may not be less than 2")
+                    obj.num_ribs = 2
+                do_exec = True
+            
+            case "root_cant_angle":
+                if obj.root_cant_angle > 15.0 or obj.root_cant_angle < -15.0:
+                    print("Wing.onChanged: root_cant_angle must be between -15.0/+15.0 degrees")
+                    obj.root_cant_angle = 0.0
+                do_exec = True
+            case _:
+                pass
+
+        if do_exec is True:    
+            self.execute(obj)
+
     def attach(self, obj: App.DocumentObject) -> None:
         obj.addExtension("App::OriginGroupExtensionPython")
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def execute(self, obj: App.DocumentObject) -> None:
-        pass
+        print("Wing.execute")
 
 class WingViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
