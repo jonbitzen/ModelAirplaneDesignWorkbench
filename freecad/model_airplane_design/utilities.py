@@ -1,5 +1,7 @@
 import Draft
 import FreeCAD as App
+from freecad.model_airplane_design import ASSETPATH
+import os
 import Part
 import numpy
 from typing import List
@@ -46,6 +48,27 @@ xz_placement = \
         App.Vector(0.000000, 0.000000, 0.000000), 
         App.Rotation(0.707107, 0.000000, 0.000000, 0.707107)
     )
+
+def save_feature_asset(doc_obj: Part.Feature) -> None:
+    filename = doc_obj.Name + ".asset"
+    filepath = os.path.join(ASSETPATH, filename)
+    data_file = open(filepath, "wb")
+    data = doc_obj.dumpContent()
+    data_file.write(data)
+    data_file.close() 
+
+def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> Part.Feature:
+    if obj_name is None:
+        obj_name = asset_name
+    filename = asset_name + ".asset"
+    filepath = os.path.join(ASSETPATH, filename)
+    data_file = open(filepath, "rb")
+    data = data_file.read()
+    data_file.close()
+    obj: Part.Feature = App.ActiveDocument.addObject(obj_type, obj_name)
+    obj.restoreContent(data)
+    obj.Label = obj_name
+    return obj
 
 # TODO: I think we need a utility that automates change of placement and geometry
 #       that I seem to be doing everywhere on an ad-hoc basis
