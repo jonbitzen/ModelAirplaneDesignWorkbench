@@ -50,6 +50,17 @@ xz_placement = \
     )
 
 def save_feature_asset(doc_obj: Part.Feature) -> None:
+    """
+    Save a document object into the plugin resources/assets folder.  This is a
+    feature intended for developer use, to author default assets that may be
+    loaded during plugin operation
+
+    Parameters
+    ----------
+    doc_obj: Part.Feature
+        The document object to store as an asset in the plugin resources/assets
+        folder.  Will be saved with a filename of the form "${doc_obj.Name}.asset"
+    """
     filename = doc_obj.Name + ".asset"
     filepath = os.path.join(ASSETPATH, filename)
     data_file = open(filepath, "wb")
@@ -58,6 +69,25 @@ def save_feature_asset(doc_obj: Part.Feature) -> None:
     data_file.close() 
 
 def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> Part.Feature:
+    """
+    Load a document object from the plugin resources/assets folder
+
+    Parameters
+    ----------
+    asset_name: str
+        Name of the asset as it would appear in the FreeCAD document where it was
+        originally authored.  For example,  if a sketch object could be accessed
+        as "App.ActiveDocument.my_sketch", the asset name will be "my_sketch"
+
+    obj_type: str
+        DocumentObject class (e.g., Part::Feature, Sketcher::SketchObject, etc)
+        that would normally be applied when the asset was originally authored
+
+    obj_name: str
+        Rename the DocumentObject "Name" and "Label" field to use the user-provided
+        name; if not specified the "asset_name" variable value will be used
+        instead 
+    """
     if obj_name is None:
         obj_name = asset_name
     filename = asset_name + ".asset"
