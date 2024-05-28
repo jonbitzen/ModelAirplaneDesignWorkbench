@@ -100,9 +100,6 @@ def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> 
     obj.Label = obj_name
     return obj
 
-# TODO: I think we need a utility that automates change of placement and geometry
-#       that I seem to be doing everywhere on an ad-hoc basis
-
 def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
     p_t = Part.Point(point)
     p_t = Part.show(p_t.toShape())
@@ -116,12 +113,22 @@ def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.
     p_t.ViewObject.PointSize = point_size
     return p_t
 
-def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5)) -> None:
+def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5)) -> List[Draft.Point]:
     drawn_pts: List[Draft.Point] = []
     for pt in pts:
-        pf = Draft.make_point(pt)
-        pf.ViewObject.PointColor = color
-        pf.ViewObject.PointSize = 10.0
+        pf = draw_point(pt, point_size=point_size, color=color)
         drawn_pts.append(pf)
     return drawn_pts
+
+def draw_point(pt: App.Vector, point_size=10.0, color: tuple = GREEN(0.5)) -> Draft.Point:
+    pf = Draft.make_point(pt)
+    pf.ViewObject.PointColor = color
+    pf.ViewObject.PointSize = point_size
+    return pf
+
+def draw_line(start: App.Vector, dir: App.Vector, line_len=1.0) -> Part.Feature:
+    norm_dir = dir.normalize()
+    pl = Part.makeLine(start, start+line_len*norm_dir)
+    pl = Part.show(pl)
+    return pl
     

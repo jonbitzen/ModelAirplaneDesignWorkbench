@@ -1,5 +1,6 @@
 from . import airfoil
 from . import rib_hole_generators as rhg
+from . import utilities
 from BOPTools import BOPFeatures
 import FreeCAD as App
 import Part
@@ -149,8 +150,22 @@ class Rib():
             ext.recompute()
             tmp_to_delete.append(ext)
 
-        obj.Shape = ext.Shape.copy()
+        # get the airfoil body, top, and bottom center
+        tmp_af.Shape.tessellate(0.01)
+        body_center = tmp_af.Shape.BoundBox.Center
+        # int_pts = airfoil.get_intersections(tmp_af.Shape.BoundBox.Center.x, tmp_af.Shape)
+        # self.top_center = int_pts[0]
+        # self.bottom_center = int_pts[1]
+
+        # move the shape center to the body center
+        transform_mtx = App.Matrix()
+        transform_mtx.move(-body_center)
+        obj.Shape = ext.Shape.transformed(transform_mtx, copy=True)
         obj.Placement = tmp_placement
+
+        # create placements for the upper and lower center, they are of use
+        # elsewhere to align the ribs to the upper and lower airfoil surface, as
+        # a potential alternative to center alignment
 
         for tmp_ft in tmp_to_delete:
             App.ActiveDocument.removeObject(tmp_ft.Name)

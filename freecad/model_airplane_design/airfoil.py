@@ -18,6 +18,51 @@ class TrailingEdgeType(Enum):
     ROUNDED = 2
 
 
+def get_intersections( 
+        x_position: float, 
+        profile: Part.Shape
+    ) -> List[App.Vector]:
+    """
+        Locates the intersections between an infinite line drawn at the
+        x_position, going up and down in the Y direction with the airfoil
+        interior profile.
+
+        Parameters
+        ----------
+        x_position: float
+            location along the X axis where the line should be drawn in the
+            Y direction, in order to cut the airfoil inner profile in two 
+            places
+
+        profile: Part.Shape
+            An airfoil shape
+
+        Return
+        ------
+        List[App.Vector]
+            The locations where the infinite line intersects the airfoil shape.
+            The upper surface intersection is at index 0, the lower surface
+            intersection is at index 1
+
+    """
+    intersections: List[App.Vector] = []
+    edge: Part.Edge
+    normal_plane = Part.Plane(utilities.origin, utilities.z_axis)
+    cut_line = Part.Line(App.Vector(x_position, 0, 0), App.Vector(x_position, 1.0, 0.0))
+    for edge in profile.Edges:
+        curve: Part.Curve = edge.Curve
+        curve = curve.trim(*edge.ParameterRange)
+        pts = curve.intersect2d(cut_line, normal_plane)
+        for pt in pts:
+            intersections.append(App.Vector(pt[0], pt[1], 0))
+        if len(intersections) == 2:
+            break
+    
+    # TODO: make a simple class that has members for the upper and lower intection
+    #       points explicitly
+    intersections.sort(key=lambda pt: pt.y, reverse=True)
+    return intersections
+
 # TODO: I think one way for this to work is for the user to add some small set
 #       of airfoils to the project.  That's probably a sane choice, since there
 #       are over 1600, and it'll make subsequent choices easier since you probably
@@ -236,7 +281,6 @@ class AirfoilData:
 
         return af_sk
 
-
 def load(filename: str) -> AirfoilData:
     """
     Load airfoil coordinates from a .dat file.  Coordinates may be in either Selig
@@ -276,7 +320,6 @@ def load(filename: str) -> AirfoilData:
             coords = __coords_from_lednicer(raw_coords)
 
     return AirfoilData(coords, airfoil_name, filename, file_type)
-
 
 def __coords_from_selig(raw_coords: numpy.ndarray) -> List[App.Vector]:
     """

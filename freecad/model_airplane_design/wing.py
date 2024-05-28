@@ -1,7 +1,10 @@
 from . import utilities
+from . import elevation_path
+from . import planform
+from . import rib
 import FreeCAD as App
+import math
 import Part
-import Sketcher
 from typing import List, Tuple
 
 def create(obj_name: str) -> App.DocumentObject:
@@ -76,12 +79,13 @@ class Wing():
                     print("Wing.onChanged: number of ribs may not be less than 2")
                     obj.num_ribs = 2
                 do_exec = True
-            
+
             case "root_cant_angle":
                 if obj.root_cant_angle > 15.0 or obj.root_cant_angle < -15.0:
                     print("Wing.onChanged: root_cant_angle must be between -15.0/+15.0 degrees")
                     obj.root_cant_angle = 0.0
                 do_exec = True
+
             case _:
                 pass
 
@@ -93,7 +97,39 @@ class Wing():
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def execute(self, obj: App.DocumentObject) -> None:
-        print("Wing.execute")
+        
+        path_helper = elevation_path.PathHelper(obj.elevation_path.Shape.Edges)
+        planform_helper = planform.Planform(obj.planform.Shape.Edges)
+        rib_poses = path_helper.get_poses(obj.num_ribs)
+        
+        idx: int = 0 
+        for pose in rib_poses:
+            chord, ctr_pt = planform_helper.get_rib_chord_at(pose.position)
+            ctr_pt.z = pose.position.z
+
+            r: rib.Rib = rib.create("rib"+str(idx))
+            r.chord = chord
+
+            path_tan = pose.direction.normalize()
+            rib_norm = -utilities.x_axis
+            rot_axis = rib_norm.cross(path_tan)
+            angle = math.degrees(rib_norm.getAngle(path_tan))
+            
+            # TODO: Why does this work when we use the x_axis, but not when we
+            #       use rot_axis?  I have a bad feeling using x_axis may not be
+            #       general
+            p = utilities.yz_placement.copy()
+            p.rotate(
+                App.Vector(0,0,0),
+                utilities.x_axis,
+                angle
+            )
+
+            p.Base = ctr_pt
+            r.Placement = p
+            r.Placement.Base = ctr_pt
+            r.recompute()
+
 
 class WingViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:

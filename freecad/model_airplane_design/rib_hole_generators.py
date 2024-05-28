@@ -1,4 +1,5 @@
 from . import utilities
+from . import airfoil
 from abc import ABC, abstractmethod
 import Draft
 import DraftGeomUtils
@@ -133,7 +134,9 @@ class HoleBoundGenerator():
 
         # this is a place to keep and delete temporary doc objects for viewing
         self.show_items: List[App.DocumentObject] = []
-        self.af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width, join=2)
+        
+        # TODO: removing join=2 made this work, but why?
+        self.af_inner_profile = self.airfoil_sk.Shape.makeOffset2D(-self.inset_width)
         self.af_inner_profile.tessellate(0.01)
 
         # create a list of intervals, and make sure they are sorted by starting
@@ -276,7 +279,7 @@ class RoundedTrapezoidControlPoints():
         spl_right_bound = interval.end-chamfer_rad
         num_ctl_pts = 5
         for x_coord in numpy.linspace(spl_left_bound, spl_right_bound, num_ctl_pts):
-            pts = self.__get_intersections(x_coord, rib_inner_profile)
+            pts = airfoil.get_intersections(x_coord, rib_inner_profile)
             self.upper_spline_pts.append(pts[0])
             self.lower_spline_pts.append(pts[1])
 
@@ -342,7 +345,7 @@ class RoundedTrapezoidControlPoints():
                 the maximum radius allowed for the chamfer
         """
 
-        corner_pts: List[App.Vector] = self.__get_intersections(x_position, profile)
+        corner_pts: List[App.Vector] = airfoil.get_intersections(x_position, profile)
         
         p1 = corner_pts[0]
         p2 = corner_pts[1]
@@ -363,42 +366,6 @@ class RoundedTrapezoidControlPoints():
             line_coord_pts = [b1]
 
         return RoundedTrapezoidEndcap(line_coord_pts)
-
-    def __get_intersections(
-            self, 
-            x_position: float, 
-            profile: Part.Shape
-        ) -> List[App.Vector]:
-        """
-            Locates the intersections between an infinite line drawn at the
-            x_position, going up and down in the Y direction with the airfoil
-            interior profile.
-
-            Parameters
-            ----------
-            x_position: float
-                location along the X axis where the line should be drawn in the
-                Y direction, in order to cut the airfoil inner profile in two 
-                places
-
-            profile: Part.Shape
-                airfoil inner profile
-        """
-        intersections: List[App.Vector] = []
-        edge: Part.Edge
-        normal_plane = Part.Plane(utilities.origin, utilities.z_axis)
-        cut_line = Part.Line(App.Vector(x_position, 0, 0), App.Vector(x_position, 1.0, 0.0))
-        for edge in profile.Edges:
-            curve: Part.Curve = edge.Curve
-            curve = curve.trim(*edge.ParameterRange)
-            pts = curve.intersect2d(cut_line, normal_plane)
-            for pt in pts:
-                intersections.append(App.Vector(pt[0], pt[1], 0))
-            if len(intersections) == 2:
-                break
-        
-        intersections.sort(key=lambda pt: pt.y, reverse=True)
-        return intersections
     
     # TODO: when the endcap is a center point rather than a line, you really want
     #       to keep the hole spacing uniform, you want to extend the spline out
