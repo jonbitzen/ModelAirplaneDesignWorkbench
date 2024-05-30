@@ -55,6 +55,14 @@ class Wing():
         obj.addObject(obj.planform)
 
         obj.addProperty(
+            "App::PropertyLinkList",
+            "rib_list",
+            "Wing",
+            "The number of ribs to generate"
+        ).rib_list = []
+        
+
+        obj.addProperty(
             "App::PropertyInteger",
             "num_ribs",
             "Wing",
@@ -89,15 +97,19 @@ class Wing():
             case _:
                 pass
 
-        if do_exec is True:    
-            self.execute(obj)
-
     def attach(self, obj: App.DocumentObject) -> None:
         obj.addExtension("App::OriginGroupExtensionPython")
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def execute(self, obj: App.DocumentObject) -> None:
         
+        rib_list = obj.rib_list
+        for r in rib_list:
+            obj.removeObject(r)
+            App.ActiveDocument.removeObject(r.Name)
+        obj.rib_list = []
+        rib_list = []
+
         path_helper = elevation_path.PathHelper(obj.elevation_path.Shape.Edges)
         planform_helper = planform.Planform(obj.planform.Shape.Edges)
         rib_poses = path_helper.get_poses(obj.num_ribs)
@@ -129,6 +141,10 @@ class Wing():
             r.Placement = p
             r.Placement.Base = ctr_pt
             r.recompute()
+            rib_list.append(r)
+            obj.addObject(r)
+            idx += 1
+        obj.rib_list = rib_list
 
 
 class WingViewProvider():
