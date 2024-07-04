@@ -4,8 +4,7 @@ from . import planform
 from . import rib
 import FreeCAD as App
 import math
-import Part
-from typing import List, Tuple
+from typing import Tuple
 
 def create(obj_name: str) -> App.DocumentObject:
 
@@ -79,6 +78,8 @@ class Wing():
         # Add this last, or chaos ensues
         obj.Proxy = self
 
+        self.rebuild_wing(obj)
+
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         do_exec = False
         match property:
@@ -101,8 +102,7 @@ class Wing():
         obj.addExtension("App::OriginGroupExtensionPython")
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
-    def execute(self, obj: App.DocumentObject) -> None:
-        
+    def rebuild_wing(self, obj: App.DocumentObject) -> None:
         rib_list = obj.rib_list
         for r in rib_list:
             obj.removeObject(r)
@@ -147,11 +147,18 @@ class Wing():
         obj.rib_list = rib_list
 
 
+    def execute(self, obj: App.DocumentObject) -> None:
+        pass
+        
 class WingViewProvider():
     def __init__(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:
         vobj.Proxy = self
         self.Object = vobj.Object
         self.attach(vobj)
+
+    def doubleClicked(self, vobj: App.Gui.ViewProviderDocumentObject) -> None:        
+        w_obj: Wing = vobj.Object.Proxy
+        w_obj.rebuild_wing(vobj.Object)
 
     def getIcon(self) -> str:
         return None
