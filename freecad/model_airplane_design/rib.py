@@ -65,10 +65,10 @@ class Rib():
 
         obj.addProperty(
             "App::PropertyLinkList",
-            "intersections",
+            "interferences",
             "Rib",
             "Other solids that intersect the rib"
-        ).intersections = []
+        ).interferences = []
 
         self.Object = obj
         obj.Proxy = self
@@ -81,7 +81,7 @@ class Rib():
         """  
 
         match property:
-            case "airfoil" | "hole_type" | "intersections":
+            case "airfoil" | "hole_type" | "interferences":
                 self.execute(obj)
             case _:
                 pass
@@ -118,8 +118,8 @@ class Rib():
         hole_exclusions: List[rhg.HoleExclusion] = []
         scale_factor: float = obj.chord / 175.0
         rib_pen_standoff: float = scale_factor * 2.0
-        for intersection in obj.intersections:
-            rib_intersection: Part.Feature = boolean_tool.make_common([rib_extr.Name, intersection.Name])
+        for interference in obj.interferences:
+            rib_intersection: Part.Feature = boolean_tool.make_common([rib_extr.Name, interference.Name])
             rib_intersection.recompute()
             hole_exclusions.append(rhg.HoleExclusion(rib_intersection.Shape.BoundBox, rib_pen_standoff))
             tmp_to_delete.append(rib_intersection)
@@ -151,7 +151,7 @@ class Rib():
         tmp_to_delete.append(rib_final_extr)
         
         # we need to move this rib final shape extr to have same centroid and
-        # placement as the obj before we find all the intersections
+        # placement as the obj before we find all the interferences
         rib_sketch.Shape.tessellate(0.01)
         body_center = rib_sketch.Shape.BoundBox.Center
         transform_mtx = App.Matrix()
@@ -159,8 +159,8 @@ class Rib():
         rib_final_extr.Shape = rib_final_extr.Shape.transformed(transform_mtx, copy=True)
         rib_final_extr.Placement = orig_placement
 
-        for intersection in obj.intersections:
-            rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, intersection.Name])
+        for interference in obj.interferences:
+            rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, interference.Name])
             rib_final_extr.recompute()
             tmp_to_delete.append(rib_final_extr)
 
