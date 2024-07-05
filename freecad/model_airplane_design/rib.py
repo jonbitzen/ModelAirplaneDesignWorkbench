@@ -180,7 +180,7 @@ class Rib():
             rib_final_extr.recompute()
             tmp_to_delete.append(rib_final_extr)
 
-        obj.Shape = rib_final_extr.Shape.copy()
+        obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
 
         for tmp_ft in tmp_to_delete:
             App.ActiveDocument.removeObject(tmp_ft.Name)
