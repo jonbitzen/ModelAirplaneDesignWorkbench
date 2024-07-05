@@ -104,7 +104,7 @@ class Rib():
 
         # create an extruded rib form, we're going to use it to find common bool
         # shapes with the intersecting objects
-        rib_extr = App.ActiveDocument.addObject("Part::Extrusion", "tmp_ext")
+        rib_extr = App.ActiveDocument.addObject("Part::Extrusion", "rib_extr")
         rib_extr.Base = rib_sketch
         rib_extr.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
         rib_extr.Solid = True
@@ -143,7 +143,7 @@ class Rib():
 
         # create a solid for the final rib shape, starting with the sketch that
         # has the lightening holes in it
-        rib_final_extr = App.ActiveDocument.addObject("Part::Extrusion", "tmp_ext")
+        rib_final_extr = App.ActiveDocument.addObject("Part::Extrusion", "rib_final_extr")
         rib_final_extr.Base = rib_sketch
         rib_final_extr.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
         rib_final_extr.Solid = True
@@ -159,6 +159,22 @@ class Rib():
         rib_final_extr.Shape = rib_final_extr.Shape.transformed(transform_mtx, copy=True)
         rib_final_extr.Placement = orig_placement
 
+        # OK the problem here is that the cut's placement is at the origin in
+        # the XY plane, and the *shape* coordinate are out in space at the correct
+        # location.  The challenge is that we want the exact opposite.  We want
+        # the shape coords to be body-centered at the XY plane, and the placement
+        # coordinates to be off in space
+        #
+        # So, the easiest thing to do is probably to:
+        # - move the shape into the xy plane, then get the body center from the
+        #   bbox so we can re-center it
+        # - apply the original placement to the new object
+        # Then I think all we may need to do is perform the shape operations after
+        # we've finished all the cuts, then just double check whether we even
+        # need to refresh the obj's Placement transform (we may not need to)
+        #
+        # Also, we need an intermediate object to avoid having the cut reset its
+        # location to the base and tool whenever we do a recompute
         for interference in obj.interferences:
             rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, interference.Name])
             rib_final_extr.recompute()
