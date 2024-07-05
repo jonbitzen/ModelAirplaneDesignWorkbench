@@ -89,6 +89,25 @@ class Rib():
     def attach(self, obj: App.DocumentObject) -> None:
         pass
 
+
+    def __make_body_centered_rib_feature(self, rib_sketch: Sketcher.Sketch, thickness: float) -> Part.Feature:
+        rib_extr: Part.Feature = App.ActiveDocument.addObject("Part::Extrusion", "rib_extr")
+        rib_extr.Base = rib_sketch
+        rib_extr.Dir = App.Vector(0, 0, thickness)
+        rib_extr.Solid = True
+        rib_extr.recompute()
+
+        body_center = rib_sketch.Shape.BoundBox.Center
+        transform_mtx = App.Matrix()
+        transform_mtx.move(-body_center)
+        
+        rib_ftr: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_ftr")
+        rib_ftr.Shape = rib_extr.Shape.transformed(transform_mtx, copy=True)
+
+        App.ActiveDocument.removeObject(rib_extr.Name)
+
+        return rib_ftr
+
     def execute(self, obj: App.DocumentObject) -> None:
         self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
 
@@ -99,15 +118,13 @@ class Rib():
         orig_placement: App.Placement = obj.Placement
 
         rib_sketch: Sketcher.SketchObject = self.airfoil_data.to_sketch(obj.getPropertyByName("chord"))
+        rib_sketch.Shape.tessellate(0.01)
         rib_sketch.recompute()
         tmp_to_delete.append(rib_sketch)
 
         # create an extruded rib form, we're going to use it to find common bool
         # shapes with the intersecting objects
-        rib_extr = App.ActiveDocument.addObject("Part::Extrusion", "rib_extr")
-        rib_extr.Base = rib_sketch
-        rib_extr.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
-        rib_extr.Solid = True
+        rib_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
         tmp_to_delete.append(rib_extr)
         rib_extr.recompute()
 
@@ -143,21 +160,10 @@ class Rib():
 
         # create a solid for the final rib shape, starting with the sketch that
         # has the lightening holes in it
-        rib_final_extr = App.ActiveDocument.addObject("Part::Extrusion", "rib_final_extr")
-        rib_final_extr.Base = rib_sketch
-        rib_final_extr.Dir = App.Vector(0, 0, obj.getPropertyByName("thickness"))
-        rib_final_extr.Solid = True
+        rib_final_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
+        rib_final_extr.Placement = orig_placement
         rib_final_extr.recompute()
         tmp_to_delete.append(rib_final_extr)
-        
-        # we need to move this rib final shape extr to have same centroid and
-        # placement as the obj before we find all the interferences
-        rib_sketch.Shape.tessellate(0.01)
-        body_center = rib_sketch.Shape.BoundBox.Center
-        transform_mtx = App.Matrix()
-        transform_mtx.move(-body_center)
-        rib_final_extr.Shape = rib_final_extr.Shape.transformed(transform_mtx, copy=True)
-        rib_final_extr.Placement = orig_placement
 
         # make cuts for each of the intereferences in the rib solid
         for interference in obj.interferences:
