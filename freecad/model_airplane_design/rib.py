@@ -91,6 +91,10 @@ class Rib():
 
 
     def __make_body_centered_rib_feature(self, rib_sketch: Sketcher.Sketch, thickness: float) -> Part.Feature:
+        """
+        Creates a Part::Feature solid object from the given rib airfoil sketch,
+        and the target thickness property
+        """
         rib_extr: Part.Feature = App.ActiveDocument.addObject("Part::Extrusion", "rib_extr")
         rib_extr.Base = rib_sketch
         rib_extr.Dir = App.Vector(0, 0, thickness)
@@ -125,6 +129,7 @@ class Rib():
         # create an extruded rib form, we're going to use it to find common bool
         # shapes with the intersecting objects
         rib_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
+        rib_extr.Placement = orig_placement
         tmp_to_delete.append(rib_extr)
         rib_extr.recompute()
 
@@ -165,13 +170,19 @@ class Rib():
         rib_final_extr.recompute()
         tmp_to_delete.append(rib_final_extr)
 
-        # make cuts for each of the intereferences in the rib solid
+        # make cuts for each of the interferences in the rib solid
         for interference in obj.interferences:
             rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, interference.Name])
             rib_final_extr.recompute()
             tmp_to_delete.append(rib_final_extr)
 
-        obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
+        # we only need to fix the shape transform if we had interferences
+        if len(obj.interferences) > 0:
+            obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
+        else:
+            obj.Shape = rib_final_extr.Shape.copy()
+
+        obj.Placement = orig_placement
 
         for tmp_ft in tmp_to_delete:
             App.ActiveDocument.removeObject(tmp_ft.Name)
