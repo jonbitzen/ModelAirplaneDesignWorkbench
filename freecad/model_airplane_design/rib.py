@@ -159,22 +159,7 @@ class Rib():
         rib_final_extr.Shape = rib_final_extr.Shape.transformed(transform_mtx, copy=True)
         rib_final_extr.Placement = orig_placement
 
-        # OK the problem here is that the cut's placement is at the origin in
-        # the XY plane, and the *shape* coordinate are out in space at the correct
-        # location.  The challenge is that we want the exact opposite.  We want
-        # the shape coords to be body-centered at the XY plane, and the placement
-        # coordinates to be off in space
-        #
-        # So, the easiest thing to do is probably to:
-        # - move the shape into the xy plane, then get the body center from the
-        #   bbox so we can re-center it
-        # - apply the original placement to the new object
-        # Then I think all we may need to do is perform the shape operations after
-        # we've finished all the cuts, then just double check whether we even
-        # need to refresh the obj's Placement transform (we may not need to)
-        #
-        # Also, we need an intermediate object to avoid having the cut reset its
-        # location to the base and tool whenever we do a recompute
+        # make cuts for each of the intereferences in the rib solid
         for interference in obj.interferences:
             rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, interference.Name])
             rib_final_extr.recompute()
