@@ -1,4 +1,5 @@
 import Draft
+from contextlib import redirect_stdout
 from enum import Enum
 import FreeCAD as App
 import numpy
@@ -58,7 +59,7 @@ def get_intersections(
         if len(intersections) == 2:
             break
     
-    # TODO: make a simple class that has members for the upper and lower intection
+    # TODO: make a simple class that has members for the upper and lower intersection
     #       points explicitly
     intersections.sort(key=lambda pt: pt.y, reverse=True)
     return intersections
@@ -368,3 +369,109 @@ def __coords_from_lednicer(raw_coords: numpy.ndarray) -> List[App.Vector]:
     """
     coords: List[App.Vector] = [App.Vector(pt[0], pt[1], 0.0) for pt in raw_coords]
     return coords
+
+def save(
+        coord_sketch: Sketcher.Sketch, 
+        filename: str,
+        info: str) -> bool:
+    """
+    Saves airfoil coordinates from a sketch into a dat file, in Selig format
+
+    Parameters
+    ----------
+    coord_sketch: Sketcher.SketchObject
+        Sketch that contains airfoil coordinates in Selig arrangement, which entails
+        the following on the part of the modeler:
+        - the airfoil chord is normalized to have a length of 1 along the x axis
+        - the airfoil leading edge is at coordinate 0 along the x axis; it should
+          be a single point where the leading edge is tangent to the y axis
+        - the airfoil traling edge is at coordinate 1 along the x axi; it may be
+          either a single point, or two points
+        - the remaining points should be x-coordinate sections that intersect
+          the upper and lower surface exactly once at the same x coordinate
+        - the airfoil upper surface y coordinates should be "up" (upper surface
+          y coordinate is > the lower surface y coordinate)
+    
+    filename: str
+        Fully qualified filepath to the location where the coordinates will be
+        stored.  Should end with a ".dat" extension according to convention
+
+    info: str
+        Brief file header info used to describe the airfoil
+    """
+    af_coords: List[App.Vector] = []
+
+    for idx in range(len(coord_sketch.Geometry)):
+        if coord_sketch.getConstruction(idx):
+            continue
+
+        geom = coord_sketch.Geometry[idx]
+        if geom.TypeId != "Part::GeomPoint":
+            continue
+
+        af_coords.append(App.Vector(geom.X, geom.Y, geom.Z))
+
+    af_coords.sort(key=lambda pt: pt.x)
+
+    upper_coords: List[App.Vector] = []
+    lower_coords: List[App.Vector] = []
+
+    # store the last coordinate in the list of it doesn't have a partner with
+    # an identical x-coordinate
+    extra_coord: App.Vector = None
+
+    # if the first two coordinates dont have the same x-value, then we had a
+    # single point at the leading edge
+    if af_coords[0].x != af_coords[1].x:
+        upper_coords.append(af_coords[0])
+        lower_coords.append(af_coords[0])
+        af_coords.pop(0)
+
+    # if the last two coordinates dont have the same x-value, then we had a
+    # single point at the trailing edge
+    if af_coords[-1].x != af_coords[-2].x:
+        extra_coord = af_coords[-1]
+        af_coords.pop(-1)
+
+    # now that we've handled the special cases, all the rest of the coordinates
+    # should be upper surface/lower surface pairs, so walk them two at a time
+    idx: int = 0
+    while idx < len(af_coords):
+        
+        if af_coords[idx].x != af_coords[idx+1].x:
+            print("Error: Upper and lower surface coordinate x values do not match")
+            return False
+
+        # order the coords in a list according to their y coordinate so the
+        # upper coordinate is first in the list
+        surf_coords: List[App.Vector] = []
+        surf_coords.append(af_coords[idx])
+        surf_coords.append(af_coords[idx+1])
+        surf_coords.sort(key=lambda pt: pt.y, reverse=True)
+
+        upper_coords.append(surf_coords[0])
+        lower_coords.append(surf_coords[1])
+        idx += 2
+    
+    if extra_coord is not None:
+        upper_coords.append(extra_coord)
+        lower_coords.append(extra_coord)
+        
+
+    def write_coords(coord_list: str):
+        for idx in range(len(coord_list)):
+            y_coord: str = "{0:.{1}f}".format(numpy.abs(coord_list[idx].y), 7)
+            if coord_list[idx].y < 0:
+                y_coord = '-' + y_coord[1:]
+            print(" {0:.{1}f}".format(coord_list[idx].x, 7) + " " + y_coord)
+
+    with open(filename, 'w') as out_file:
+        with redirect_stdout(out_file):
+            print(" " + info)
+            print(' {:>8}.'.format(len(upper_coords)) + ' {:>8}.'.format(len(upper_coords)))
+            print("")
+            write_coords(upper_coords)
+            print("")
+            write_coords(lower_coords)
+
+    return True
