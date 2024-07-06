@@ -435,7 +435,7 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             lightening holes
         """
                 
-        # create the sketch on the YZ plane
+        # create the sketch on the XY plane
         sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
         sk.Placement = utilities.xy_placement    
 
