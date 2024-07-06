@@ -143,7 +143,14 @@ class Rib():
         for interference in obj.interferences:
             rib_intersection: Part.Feature = boolean_tool.make_common([rib_extr.Name, interference.Name])
             rib_intersection.recompute()
-            hole_exclusions.append(rhg.HoleExclusion(rib_intersection.Shape.BoundBox, rib_pen_standoff))
+
+            rib_i_ft: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_i_ft")
+            rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
+            rib_i_ft.Placement.Matrix.move(rib_sketch.Shape.BoundBox.Center)
+            tmp_to_delete.append(rib_i_ft)
+            rib_i_ft.recompute()
+
+            hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))
             tmp_to_delete.append(rib_intersection)
 
         inner_profile_standoff: float = scale_factor * 2.0
