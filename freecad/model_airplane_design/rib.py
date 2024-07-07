@@ -80,11 +80,15 @@ class Rib():
         objects that may be added explictly by the user
         """  
 
-        match property:
-            case "airfoil" | "hole_type" | "interferences":
-                self.execute(obj)
-            case _:
-                pass
+        pass
+
+        # TODO: for some reason when I lave this in, we spew empty sketches
+        #       everywhere, sort that out
+        # match property:
+        #     case "airfoil" | "hole_type" | "interferences":
+        #         self.execute(obj)
+        #     case _:
+        #         pass
 
     def attach(self, obj: App.DocumentObject) -> None:
         pass
@@ -126,6 +130,9 @@ class Rib():
         rib_sketch.recompute()
         tmp_to_delete.append(rib_sketch)
 
+        # TODO: we only need to calculate interferences if the hole generator is
+        #       valid, so we could skip all this in many cases
+
         # create an extruded rib form, we're going to use it to find common bool
         # shapes with the intersecting objects
         rib_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
@@ -142,7 +149,14 @@ class Rib():
         rib_pen_standoff: float = scale_factor * 2.0
         for interference in obj.interferences:
             rib_intersection: Part.Feature = boolean_tool.make_common([rib_extr.Name, interference.Name])
+            tmp_to_delete.append(rib_intersection)
             rib_intersection.recompute()
+
+            # NOTE: for some reason isNull() sometimes returns False, even when
+            #       there is no possible intersection, but the shape volume is
+            #       at least zero so hopefully we can rely on that
+            if rib_intersection.Shape.Volume < utilities.epsilon:
+                continue
 
             rib_i_ft: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_i_ft")
             rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
@@ -150,8 +164,7 @@ class Rib():
             tmp_to_delete.append(rib_i_ft)
             rib_i_ft.recompute()
 
-            hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))
-            tmp_to_delete.append(rib_intersection)
+            hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))            
 
         inner_profile_standoff: float = scale_factor * 2.0
         hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)

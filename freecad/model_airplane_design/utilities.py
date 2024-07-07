@@ -49,6 +49,8 @@ xz_placement = \
         App.Rotation(0.707107, 0.000000, 0.000000, 0.707107)
     )
 
+epsilon: float = 1.0e-6
+
 def save_feature_asset(doc_obj: Part.Feature) -> None:
     """
     Save a document object into the plugin resources/assets folder.  This is a
