@@ -51,6 +51,30 @@ xz_placement = \
 
 epsilon: float = 1.0e-6
 
+class TempDocObjectHelper():
+    def __init__(self) -> None:
+        self.doc = App.ActiveDocument
+        self.tmp_objects : List[App.DocumentObject] = []
+
+    def addObject(self, tmp_obj: App.DocumentObject, do_delete: bool = True) -> App.DocumentObject:
+        if do_delete:
+            self.tmp_objects.append(tmp_obj)
+        return tmp_obj
+    
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        for tmp in self.tmp_objects:
+            self.doc.removeObject(tmp.Name)
+        self.tmp_objects = []
+
+    def __del__(self):
+        for tmp in self.tmp_objects:
+            self.doc.removeObject(tmp.Name)
+        self.tmp_objects = []
+            
+
 def save_feature_asset(doc_obj: Part.Feature) -> None:
     """
     Save a document object into the plugin resources/assets folder.  This is a

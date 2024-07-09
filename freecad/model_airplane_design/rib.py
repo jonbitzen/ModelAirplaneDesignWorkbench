@@ -99,113 +99,101 @@ class Rib():
         Creates a Part::Feature solid object from the given rib airfoil sketch,
         and the target thickness property
         """
-        rib_extr: Part.Feature = App.ActiveDocument.addObject("Part::Extrusion", "rib_extr")
-        rib_extr.Base = rib_sketch
-        rib_extr.Dir = App.Vector(0, 0, thickness)
-        rib_extr.Solid = True
-        rib_extr.recompute()
+        with utilities.TempDocObjectHelper() as tmp_obj_helper:
+            rib_extr: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Extrusion", "rib_extr"))
+            rib_extr.Base = rib_sketch
+            rib_extr.Dir = App.Vector(0, 0, thickness)
+            rib_extr.Solid = True
+            rib_extr.recompute()
 
-        body_center = rib_sketch.Shape.BoundBox.Center
-        transform_mtx = App.Matrix()
-        transform_mtx.move(-body_center)
-        
-        rib_ftr: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_ftr")
-        rib_ftr.Shape = rib_extr.Shape.transformed(transform_mtx, copy=True)
+            body_center = rib_sketch.Shape.BoundBox.Center
+            transform_mtx = App.Matrix()
+            transform_mtx.move(-body_center)
+            
+            rib_ftr: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_ftr")
+            rib_ftr.Shape = rib_extr.Shape.transformed(transform_mtx, copy=True)
 
-        App.ActiveDocument.removeObject(rib_extr.Name)
-
-        return rib_ftr
+            return rib_ftr
 
     def execute(self, obj: App.DocumentObject) -> None:
-        self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
 
-        # register temporary doc objects here, so they can be easily disposed
-        # when we're done with them
-        tmp_to_delete: List[Part.Feature] = []
+        with utilities.TempDocObjectHelper() as tmp_obj_helper:
+            orig_placement: App.Placement = obj.Placement
 
-        orig_placement: App.Placement = obj.Placement
+            self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
 
-        rib_sketch: Sketcher.SketchObject = self.airfoil_data.to_sketch(obj.getPropertyByName("chord"))
-        rib_sketch.Shape.tessellate(0.01)
-        rib_sketch.recompute()
-        tmp_to_delete.append(rib_sketch)
+            rib_sketch: Sketcher.SketchObject = tmp_obj_helper.addObject(self.airfoil_data.to_sketch(obj.getPropertyByName("chord")))
+            rib_sketch.Shape.tessellate(0.01)
+            rib_sketch.recompute()
 
-        # TODO: we only need to calculate interferences if the hole generator is
-        #       valid, so we could skip all this in many cases
+            # TODO: we only need to calculate interferences if the hole generator is
+            #       valid, so we could skip all this in many cases
 
-        # create an extruded rib form, we're going to use it to find common bool
-        # shapes with the intersecting objects
-        rib_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
-        rib_extr.Placement = orig_placement
-        tmp_to_delete.append(rib_extr)
-        rib_extr.recompute()
+            # create an extruded rib form, we're going to use it to find common bool
+            # shapes with the intersecting objects
+            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness")))
+            rib_extr.Placement = orig_placement
+            rib_extr.recompute()
 
-        # create a set of hole exclusion regions by finding the common bool
-        # between each of the intersecting objects and the rib and applying a
-        # standoff to the bbox of the resulting shape
-        boolean_tool = BOPFeatures.BOPFeatures(App.ActiveDocument)
-        hole_exclusions: List[rhg.HoleExclusion] = []
-        scale_factor: float = obj.chord / 175.0
-        rib_pen_standoff: float = scale_factor * 2.0
-        for interference in obj.interferences:
-            rib_intersection: Part.Feature = boolean_tool.make_common([rib_extr.Name, interference.Name])
-            tmp_to_delete.append(rib_intersection)
-            rib_intersection.recompute()
+            # create a set of hole exclusion regions by finding the common bool
+            # between each of the intersecting objects and the rib and applying a
+            # standoff to the bbox of the resulting shape
+            boolean_tool = BOPFeatures.BOPFeatures(App.ActiveDocument)
+            hole_exclusions: List[rhg.HoleExclusion] = []
+            scale_factor: float = obj.chord / 175.0
+            rib_pen_standoff: float = scale_factor * 2.0
+            for interference in obj.interferences:
+                rib_intersection: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_common([rib_extr.Name, interference.Name]))
+                rib_intersection.recompute()
 
-            # NOTE: for some reason isNull() sometimes returns False, even when
-            #       there is no possible intersection, but the shape volume is
-            #       at least zero so hopefully we can rely on that
-            if rib_intersection.Shape.Volume < utilities.epsilon:
-                continue
+                # NOTE: for some reason isNull() sometimes returns False, even when
+                #       there is no possible intersection, but the shape volume is
+                #       at least zero so hopefully we can rely on that
+                if rib_intersection.Shape.Volume < utilities.epsilon:
+                    continue
 
-            rib_i_ft: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "rib_i_ft")
-            rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
-            rib_i_ft.Placement.Matrix.move(rib_sketch.Shape.BoundBox.Center)
-            tmp_to_delete.append(rib_i_ft)
-            rib_i_ft.recompute()
+                rib_i_ft: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Feature", "rib_i_ft"))
+                rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
+                rib_i_ft.Placement.Matrix.move(rib_sketch.Shape.BoundBox.Center)
+                rib_i_ft.recompute()
 
-            hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))            
+                hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))            
 
-        inner_profile_standoff: float = scale_factor * 2.0
-        hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)
+            inner_profile_standoff: float = scale_factor * 2.0
+            hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)
 
-        hbr_list = hbg.get_hole_bounds()
- 
-        # Calculate lightening holes for each hole bound region, and add the
-        # geometry to the rib sketch 
-        hbg = rhg.HoleGeneratorFactory.create_generator(obj.hole_type, obj.chord)
-        if hbg is not None:
-            for hbr in hbr_list:
-                lh_sk = hbg.generate_sketch(hbr)
-                lh_sk.recompute()
-                tmp_to_delete.append(lh_sk)
-                rib_sketch.addGeometry(lh_sk.Geometry)
-                
-        rib_sketch.recompute()        
+            hbr_list = hbg.get_hole_bounds()
+    
+            # Calculate lightening holes for each hole bound region, and add the
+            # geometry to the rib sketch 
+            hbg = rhg.HoleGeneratorFactory.create_generator(obj.hole_type, obj.chord)
+            if hbg is not None:
+                for hbr in hbr_list:
+                    lh_sk = tmp_obj_helper.addObject(hbg.generate_sketch(hbr))
+                    lh_sk.recompute()
+                    rib_sketch.addGeometry(lh_sk.Geometry)
+                    
+            rib_sketch.recompute()        
 
-        # create a solid for the final rib shape, starting with the sketch that
-        # has the lightening holes in it
-        rib_final_extr = self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness"))
-        rib_final_extr.Placement = orig_placement
-        rib_final_extr.recompute()
-        tmp_to_delete.append(rib_final_extr)
-
-        # make cuts for each of the interferences in the rib solid
-        for interference in obj.interferences:
-            rib_final_extr: Part.Feature = boolean_tool.make_cut([rib_final_extr.Name, interference.Name])
+            # create a solid for the final rib shape, starting with the sketch that
+            # has the lightening holes in it
+            rib_final_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness")))
+            rib_final_extr.Placement = orig_placement
             rib_final_extr.recompute()
-            tmp_to_delete.append(rib_final_extr)
 
-        # we only need to fix the shape transform if we had interferences
-        if len(obj.interferences) > 0:
-            obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
-        else:
-            obj.Shape = rib_final_extr.Shape.copy()
+            # make cuts for each of the interferences in the rib solid
+            for interference in obj.interferences:
+                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, interference.Name]))
+                rib_final_extr.recompute()
 
-        obj.Placement = orig_placement
+            # we only need to fix the shape transform if we had interferences
+            if len(obj.interferences) > 0:
+                obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
+            else:
+                obj.Shape = rib_final_extr.Shape.copy()
 
-        for tmp_ft in tmp_to_delete:
-            App.ActiveDocument.removeObject(tmp_ft.Name)
+            obj.Placement = orig_placement
+
 
 class RibViewProvider():
     """
