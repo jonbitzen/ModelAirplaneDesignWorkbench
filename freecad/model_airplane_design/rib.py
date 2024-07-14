@@ -146,6 +146,9 @@ class Rib():
                 rib_intersection: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_common([rib_extr.Name, interference.Name]))
                 rib_intersection.recompute()
 
+                if rib_intersection.Shape.isNull():
+                    continue
+
                 # NOTE: for some reason isNull() sometimes returns False, even when
                 #       there is no possible intersection, but the shape volume is
                 #       at least zero so hopefully we can rely on that
