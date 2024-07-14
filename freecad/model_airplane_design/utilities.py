@@ -52,15 +52,49 @@ xz_placement = \
 epsilon: float = 1.0e-6
 
 class TempDocObjectHelper():
+    """
+    This class holds temporary objects in a with-as context block, to ensure that
+    the held objects are removed even if some of the geometry generation fails
+    """
     def __init__(self) -> None:
         self.doc = App.ActiveDocument
         self.tmp_objects : List[App.DocumentObject] = []
 
     def addObject(self, tmp_obj: App.DocumentObject, do_delete: bool = True) -> App.DocumentObject:
+        """
+        Adds a document object to the internal cache to be released when the
+        with-as block exits
+
+        Parameters
+        ----------
+        tmp_obj: App.DocumentObject
+            the document object to be cleaned up when the with-as block ends
+
+        Return
+        ------
+        A reference to the original document object that will be managed
+
+        """
         if do_delete:
             self.tmp_objects.append(tmp_obj)
         return tmp_obj
     
+    def removeObject(self, tmp_obj: App.DocumentObject) -> None:
+        """
+        Removes a document object from the internal cache to be released when
+        the with-as block exits.
+
+        Parameters
+        ----------
+        tmp_obj: App.DocumentObject
+            the document object that will be released from the cache; the object
+            will not be cleaned up when the with-as block ends
+        """
+        for idx in range(len(self.tmp_objects)):
+            if self.tmp_objects[idx].Name == tmp_obj.Name:
+                self.tmp_objects.pop(idx)
+                break
+
     def __enter__(self):
         return self
 
