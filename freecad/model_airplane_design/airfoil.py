@@ -75,6 +75,7 @@ class AirfoilType(Enum):
     GOE173 = 2
     NACA2411 = 3
     NACA654221 = 4
+    AIRCO_DH1 = 5
 
     @classmethod
     def to_filename(self, airfoil_type: str) -> str:
@@ -102,6 +103,8 @@ class AirfoilType(Enum):
                 return "~/Documents/airfoil-data/naca2411.dat"
             case AirfoilType.NACA654221.name:
                 return "~/Documents/airfoil-data/naca654221.dat"
+            case AirfoilType.AIRCO_DH1.name:
+                return "~/Documents/airfoil-data/airco-dh1.dat" 
             case _:
                 print("AirfoilType.to_filename - unknown airfoil type \"" + airfoil_type + "\"")
                 return None
