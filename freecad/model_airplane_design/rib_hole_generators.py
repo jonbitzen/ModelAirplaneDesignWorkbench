@@ -434,7 +434,7 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             a region where the hole generator may generate one or more rib
             lightening holes
         """
-                
+    
         # create the sketch on the XY plane
         sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
         sk.Placement = utilities.xy_placement    
@@ -631,46 +631,55 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
                 )
             return ctl_pts
         
-        hole_ctl_pts_list = \
-            get_hole_control_pts(
-                bdg_region, 
-                self.min_hole_spacing, 
-                self.max_chamfer_rad, 
-                self.max_hole_length
-            )
-        
-        for ctl_pts in hole_ctl_pts_list:
 
-            left_line_id, left_line = draw_line(ctl_pts.left_endcap)
-            right_line_id, right_line = draw_line(ctl_pts.right_endcap)
-            upper_bsp_id, upper_bsp = draw_spline(ctl_pts.upper_spline_pts)
-            lower_bsp_id, lower_bsp = draw_spline(ctl_pts.lower_spline_pts)
-
-            draw_chamfers(
-                ctl_pts.left_chamfer_pts,
-                self.max_chamfer_rad,
-                left_line, 
-                left_line_id, 
-                upper_bsp, 
-                upper_bsp_id, 
-                lower_bsp, 
-                lower_bsp_id, 
-                EndcapSide.LEFT
-            )
+        with utilities.TempDocObjectHelper() as tmp_obj_helper:
             
-            draw_chamfers(
-                ctl_pts.right_chamfer_pts, 
-                self.max_chamfer_rad,
-                right_line, 
-                right_line_id, 
-                upper_bsp, 
-                upper_bsp_id, 
-                lower_bsp, 
-                lower_bsp_id, 
-                EndcapSide.RIGHT
-            )
+            tmp_obj_helper.addObject(sk)
+        
+            hole_ctl_pts_list = \
+                get_hole_control_pts(
+                    bdg_region, 
+                    self.min_hole_spacing, 
+                    self.max_chamfer_rad, 
+                    self.max_hole_length
+                )
+            
+            for ctl_pts in hole_ctl_pts_list:
 
-        sk.addConstraint(constraints)
+                left_line_id, left_line = draw_line(ctl_pts.left_endcap)
+                right_line_id, right_line = draw_line(ctl_pts.right_endcap)
+                upper_bsp_id, upper_bsp = draw_spline(ctl_pts.upper_spline_pts)
+                lower_bsp_id, lower_bsp = draw_spline(ctl_pts.lower_spline_pts)
+
+                draw_chamfers(
+                    ctl_pts.left_chamfer_pts,
+                    self.max_chamfer_rad,
+                    left_line, 
+                    left_line_id, 
+                    upper_bsp, 
+                    upper_bsp_id, 
+                    lower_bsp, 
+                    lower_bsp_id, 
+                    EndcapSide.LEFT
+                )
+                
+                draw_chamfers(
+                    ctl_pts.right_chamfer_pts, 
+                    self.max_chamfer_rad,
+                    right_line, 
+                    right_line_id, 
+                    upper_bsp, 
+                    upper_bsp_id, 
+                    lower_bsp, 
+                    lower_bsp_id, 
+                    EndcapSide.RIGHT
+                )
+
+            sk.addConstraint(constraints)
+
+            # if we got here without an exception, then it is safe to remove
+            # the object from the helper so we can return it
+            tmp_obj_helper.removeObject(sk)
 
         return sk
     
