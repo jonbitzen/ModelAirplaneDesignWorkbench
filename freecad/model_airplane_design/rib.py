@@ -175,6 +175,9 @@ class Rib():
                 for hbr in hbr_list:
                     lh_sk = tmp_obj_helper.addObject(hbg.generate_sketch(hbr), do_delete=True)
                     lh_sk.recompute()
+                    if lh_sk.Shape.isNull() or not lh_sk.Shape.isClosed():
+                        print("lightening hole sketch geometry is either null, or is not closed, skipping")
+                        continue
                     rib_sketch.addGeometry(lh_sk.Geometry)
                     
             rib_sketch.recompute()        
