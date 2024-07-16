@@ -445,7 +445,7 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             if endcap.is_line():
                 line = Part.LineSegment(endcap.pts[0], endcap.pts[1])
                 id = sk.addGeometry(line, False)
-                constraints.append(Sketcher.Constraint("Block", id))
+                constraints.append(Sketcher.Constraint("Vertical", id))
                 return id, line
             return -1, None
         
