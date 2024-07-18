@@ -44,6 +44,20 @@ class Rib():
 
         obj.addProperty(
             "App::PropertyFloat",
+            "trim_le",
+            "Rib",
+            "Trim the rib some distance from the leading edge"
+        ).trim_le = 0.0
+
+        obj.addProperty(
+            "App::PropertyFloat",
+            "trim_te",
+            "Rib",
+            "Trim the rib some distance from the trailing edge"
+        ).trim_te = 0.0
+
+        obj.addProperty(
+            "App::PropertyFloat",
             "thickness",
             "Rib",
             "Rib thickness"
@@ -121,9 +135,9 @@ class Rib():
         with utilities.TempDocObjectHelper() as tmp_obj_helper:
             orig_placement: App.Placement = obj.Placement
 
-            self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.getPropertyByName("airfoil")))
+            self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.airfoil))
 
-            rib_sketch: Sketcher.SketchObject = tmp_obj_helper.addObject(self.airfoil_data.to_sketch(obj.getPropertyByName("chord")), do_delete=True)
+            rib_sketch: Sketcher.SketchObject = tmp_obj_helper.addObject(self.airfoil_data.to_sketch(obj.chord), do_delete=True)
             rib_sketch.Shape.tessellate(0.01)
             rib_sketch.recompute()
 
@@ -132,7 +146,7 @@ class Rib():
 
             # create an extruded rib form, we're going to use it to find common bool
             # shapes with the intersecting objects
-            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness")), do_delete=True)
+            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
             rib_extr.Placement = orig_placement
             rib_extr.recompute()
 
@@ -163,6 +177,36 @@ class Rib():
 
                 hole_exclusions.append(rhg.HoleExclusion(rib_i_ft.Shape.BoundBox, rib_pen_standoff))            
 
+            # create trim boxes in the rib's body-centered coordinate space to
+            # trim the rib some distance with respect to the leading edge and/or
+            # trailing edge
+            trim_le: float = obj.trim_le
+            trim_te: float = obj.trim_te
+
+            trim_le = trim_le if trim_le >= 0.0 else 0.0
+            trim_te = trim_te if trim_te >= 0.0 else 0.0
+            
+            do_trim = False if (trim_te+trim_le) > 0.8 * obj.chord else True
+
+            le_trim_bbox: App.BoundBox = None
+            te_trim_bbox: App.BoundBox = None
+            if do_trim:
+                if trim_le > 0.0:
+                    le_trim_bbox = App.BoundBox()
+                    le_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMin
+                    le_trim_bbox.XMax = le_trim_bbox.XMin + trim_le
+                    le_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
+                    le_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
+                    hole_exclusions.append(rhg.HoleExclusion(le_trim_bbox, rib_pen_standoff))
+
+                if trim_te > 0.0:
+                    te_trim_bbox = App.BoundBox()
+                    te_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMax - trim_te
+                    te_trim_bbox.XMax = rib_sketch.Shape.BoundBox.XMax
+                    te_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
+                    te_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
+                    hole_exclusions.append(rhg.HoleExclusion(te_trim_bbox, rib_pen_standoff))
+
             inner_profile_standoff: float = scale_factor * 2.0
             hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)
 
@@ -184,7 +228,48 @@ class Rib():
 
             # create a solid for the final rib shape, starting with the sketch that
             # has the lightening holes in it
-            rib_final_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.getPropertyByName("thickness")), do_delete=True)
+            rib_final_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
+            
+            # make boolean trim cuts here before we change the rib transform
+            if le_trim_bbox is not None:
+                le_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "le_trim_tool"), do_delete=True)
+                # NOTE: we add margins to the tool size, and compensate with the
+                #       placement to ensure that the tool entirely covers the
+                #       airfoil extrusion, and doesn't leave slivers behind
+                le_trim_tool.Length = le_trim_bbox.XLength + 1
+                le_trim_tool.Width = le_trim_bbox.YLength + 2
+                le_trim_tool.Height = obj.thickness * 2
+                
+                le_trim_tool.Placement.move(
+                    App.Vector(
+                        rib_final_extr.Shape.BoundBox.XMin - 1, 
+                        rib_final_extr.Shape.BoundBox.YMin - 1, 
+                        -0.5*obj.thickness
+                    )
+                )
+                le_trim_tool.recompute()
+                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, le_trim_tool.Name]), do_delete=True)
+                rib_final_extr.recompute()
+
+            if te_trim_bbox is not None:
+                te_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "te_trim_tool"), do_delete=True)
+                te_trim_tool.Length = te_trim_bbox.XLength + 1
+                te_trim_tool.Width = te_trim_bbox.YLength + 2
+                te_trim_tool.Height = obj.thickness * 2
+                
+                te_trim_tool.Placement.move(
+                    App.Vector(
+                        rib_final_extr.Shape.BoundBox.XMax - trim_te, 
+                        rib_final_extr.Shape.BoundBox.YMin - 1, 
+                        -0.5*obj.thickness
+                    )
+                )
+                te_trim_tool.recompute()
+                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, te_trim_tool.Name]), do_delete=True)
+                rib_final_extr.recompute()
+
+
+            # move the rib into its final transform space
             rib_final_extr.Placement = orig_placement
             rib_final_extr.recompute()
 
