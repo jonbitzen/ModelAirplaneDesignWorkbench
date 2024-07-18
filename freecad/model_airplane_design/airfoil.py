@@ -19,6 +19,20 @@ class TrailingEdgeType(Enum):
     ROUNDED = 2
 
 
+def get_intersections_with_curve(x_position: float, curve):
+    intersections: List[App.Vector] = []
+    curve: Part.BoundedCurve = curve
+    cut_line = Part.Line(App.Vector(x_position, 0, 0), App.Vector(x_position, 1.0, 0.0))
+    trimmed_curve = curve.trim(curve.FirstParameter, curve.LastParameter)
+    normal_plane = Part.Plane(utilities.origin, utilities.z_axis)
+    pts = trimmed_curve.intersect2d(cut_line, normal_plane)
+    for pt in pts:
+        intersections.append(App.Vector(pt[0], pt[1], 0))
+    intersections.sort(key=lambda pt: pt.y, reverse=True)
+    return intersections
+
+# TODO: can we break this up in a way that we have a method to use for a single
+#       curve, that way it can be used for trimming the rib
 def get_intersections( 
         x_position: float, 
         profile: Part.Shape
