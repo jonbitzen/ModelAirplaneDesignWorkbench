@@ -161,7 +161,7 @@ class AirfoilData:
         self.type =type
         self.master_sketch = self.__to_master_sketch()
 
-    def to_shape(self, chord: float) -> Part.Shape:
+    def to_shape(self, chord: float, body_centered: bool=False) -> Part.Shape:
         """
         Scales the master airfoil sketchto the desired chord size, returns a
         Shape
@@ -171,6 +171,10 @@ class AirfoilData:
         chord : float
             The rib chord is the distance from the airfoil leading edge to its
             trailing edge
+        
+        body_centered: bool
+            The shape should be returned so that its body origin is located at
+            the first moment of area
 
         Returns
         -------
@@ -182,10 +186,17 @@ class AirfoilData:
         scale_factor = chord / self.master_sketch.Shape.BoundBox.XLength
         scaled_af_shape = self.master_sketch.Shape.copy()
         scaled_af_shape.scale(scale_factor)
+
+        if body_centered:
+            body_center = scaled_af_shape.BoundBox.Center
+            transform_mtx = App.Matrix()
+            transform_mtx.move(-body_center)
+            scaled_af_shape = scaled_af_shape.transformed(transform_mtx, True)
+
         return scaled_af_shape
 
 
-    def to_sketch(self, chord: float) -> Sketcher.Sketch:
+    def to_sketch(self, chord: float, body_centered: bool=False) -> Sketcher.Sketch:
         """
         Scales the master airfoil sketch to the desired chord size, returns an
         editable SketchObject
@@ -195,13 +206,17 @@ class AirfoilData:
         chord: float
             The length of the airfoil from leading edge to trailing edge
 
+        body_centered: bool
+            The shape should be returned so that its body origin is located at
+            the first moment of area
+
         Return
         ------
         Sketcher.Sketch
             A fully constrained sketch derived from the airfoil data file
             coordinates, scaled to the user-designated chord length
         """
-        scaled_af_shape = self.to_shape(chord)
+        scaled_af_shape = self.to_shape(chord, body_centered)
         return Draft.make_sketch(scaled_af_shape, autoconstraints=True, name=self.name+"-sketch")
 
     def __to_master_sketch(self, trailing_edge_type=TrailingEdgeType.LINE) -> Sketcher.Sketch:
