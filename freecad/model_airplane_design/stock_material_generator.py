@@ -20,9 +20,19 @@ def create_tube(
         inner_diameter: float = 3.0
         ) -> App.DocumentObject:
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
-    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","Tube")
+    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","reb_obj")
     StockTube(tube, outer_diameter, inner_diameter)
     StockTubeViewProvider(tube.ViewObject)
+    body.addObject(tube)
+
+def create_cylinder(
+        obj_name: str,
+        diameter: float = 6.35
+    ) -> App.DocumentObject:
+    body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
+    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","ref_obj")
+    StockCylinder(tube, diameter)
+    StockCylinderViewProvider(tube.ViewObject)
     body.addObject(tube)
 
 class StockCuboid:
@@ -132,8 +142,6 @@ class StockCuboidViewProvider:
     def loads(self, state):
         return None
     
-
-
 class StockTube:
     def __init__(
             self,
@@ -158,10 +166,10 @@ class StockTube:
 
         obj.addProperty(
             "App::PropertyLength",
-            "height",
+            "length",
             "Tube",
-            "Height of tube"
-        ).height = 10
+            "Length of the stock tube"
+        ).length = 10
 
         self.makeAttachable(obj)
         obj.Proxy = self
@@ -171,8 +179,8 @@ class StockTube:
         obj.setEditorMode('Placement', 0) 
 
     def execute(self,  obj: App.DocumentObject):
-        outer_cylinder = Part.makeCylinder(obj.outer_diameter/2, obj.height)
-        inner_cylinder = Part.makeCylinder(obj.inner_diameter/2, obj.height)
+        outer_cylinder = Part.makeCylinder(obj.outer_diameter/2, obj.length)
+        inner_cylinder = Part.makeCylinder(obj.inner_diameter/2, obj.length)
         # just make cylinder
         if obj.inner_diameter == obj.outer_diameter: 
             tube_shape = outer_cylinder
@@ -292,3 +300,147 @@ class StockTubeViewProvider:
         '''When restoring the serialized object from document we have the chance to set some internals here.\
                 Since no data were serialized nothing needs to be done here.'''
         return None
+    
+class StockCylinder:
+    def __init__(
+            self,
+            obj: App.DocumentObject,
+            diameter: float
+        ) -> None:
+
+        obj.addProperty(
+            "App::PropertyLength",
+            "diameter",
+            "Tube",
+            "diameter"
+        ).diameter = diameter
+
+        obj.addProperty(
+            "App::PropertyLength",
+            "length",
+            "Tube",
+            "Length of the stock cylinder"
+        ).length = 10
+
+        self.makeAttachable(obj)
+        obj.Proxy = self
+
+    def makeAttachable(self, obj: App.DocumentObject):
+        obj.addExtension('Part::AttachExtensionPython')
+        obj.setEditorMode('Placement', 0) 
+
+    def execute(self,  obj: App.DocumentObject):
+        cylinder = Part.makeCylinder(obj.diameter/2, obj.length)
+    
+        mtx = App.Matrix()
+        mtx.move(-cylinder.BoundBox.Center)
+        mtx.rotateY(numpy.deg2rad(-90))
+        cylinder = cylinder.transformed(mtx, True)
+
+        if not hasattr(obj, "positionBySupport"):
+            self.makeAttachable(obj)
+        obj.positionBySupport()
+        cylinder.Placement = obj.Placement
+
+        # TODO make the shape body centered so its easier to manage
+
+        # BaseFeature (shape property of type Part::PropertyPartShape) is provided
+        # for uswith the PartDesign::FeaturePython and related classes, but it
+        # might be empty if our object is the first object in the tree.  it's a
+        # good idea to checkfor its existence in case we want to make type 
+        # Part::FeaturePython, which won't have it
+        if hasattr(obj, "BaseFeature") and obj.BaseFeature != None:
+            if "Subtractive" in obj.TypeId:
+                full_shape = obj.BaseFeature.Shape.cut(cylinder)
+            else:
+                full_shape = obj.BaseFeature.Shape.fuse(cylinder)
+            full_shape.transformShape(obj.Placement.inverse().toMatrix(), True)
+            obj.Shape = full_shape
+        else:
+            obj.Shape = cylinder
+
+        # PartDesign::FeatureAdditivePython and PartDesign::FeatureSubtractivePython 
+        # have this property but PartDesign::FeaturePython does not, it is the 
+        # shape used for copying in pattern features for example in making a 
+        # polar pattern
+        if hasattr(obj,"AddSubShape"):
+            cylinder.transformShape(obj.Placement.inverse().toMatrix(), True)
+            obj.AddSubShape = cylinder
+
+class StockCylinderViewProvider:
+
+    def __init__(self, vobj: App.Gui.ViewProviderDocumentObject):
+        '''Set this object to the proxy object of the actual view provider'''
+        vobj.Proxy = self
+
+    def attach(self, vobj: App.Gui.ViewProviderDocumentObject):
+        self.vobj = vobj
+
+    def updateData(self, obj: App.DocumentObject, property: str):
+        '''If a property of the handled feature has changed we have the chance to handle this here'''
+        pass
+
+    def getDisplayModes(self,vobj: App.Gui.ViewProviderDocumentObject) -> List[str]:
+        '''Return a list of display modes.'''
+        modes=[]
+        modes.append("Flat Lines")
+        modes.append("Shaded")
+        modes.append("Wireframe")
+        return modes
+
+    def getDefaultDisplayMode(self) -> str:
+        '''Return the name of the default display mode. It must be defined in getDisplayModes.'''
+        return "Flat Lines"
+
+    def setDisplayMode(self,mode) -> str:
+        '''Map the display mode defined in attach with those defined in getDisplayModes.\
+                Since they have the same names nothing needs to be done. This method is optional'''
+        return mode
+
+    def onChanged(self, vobj: App.Gui.ViewProviderDocumentObject, property: str):
+        '''Here we can do something when a single property got changed'''
+        #App.Console.PrintMessage("Change property: " + str(prop) + "\n")
+        pass
+
+    def getIcon(self):
+        '''Return the icon in XPM format which will appear in the tree view. This method is\
+                optional and if not defined a default icon is shown.'''
+        return """
+            /* XPM */
+            static const char * ViewProviderBox_xpm[] = {
+            "16 16 6 1",
+            "   c None",
+            ".  c #141010",
+            "+  c #615BD2",
+            "@  c #C39D55",
+            "#  c #000000",
+            "$  c #57C355",
+            "        ........",
+            "   ......++..+..",
+            "   .@@@@.++..++.",
+            "   .@@@@.++..++.",
+            "   .@@  .++++++.",
+            "  ..@@  .++..++.",
+            "###@@@@ .++..++.",
+            "##$.@@$#.++++++.",
+            "#$#$.$$$........",
+            "#$$#######      ",
+            "#$$#$$$$$#      ",
+            "#$$#$$$$$#      ",
+            "#$$#$$$$$#      ",
+            " #$#$$$$$#      ",
+            "  ##$$$$$#      ",
+            "   #######      "};
+            """
+
+    def dumps(self) -> str:
+        '''When saving the document this object gets stored using Python's json module.\
+                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
+                to return a tuple of all serializable objects or None.'''
+        return None
+
+    def loads(self, state):
+        '''When restoring the serialized object from document we have the chance to set some internals here.\
+                Since no data were serialized nothing needs to be done here.'''
+        return None
+    
