@@ -3,10 +3,13 @@ import numpy
 import Part
 from typing import List
 
+def imp_frac(inches: float):
+    return inches * 25.4
+
 def create_cuboid(
         obj_name: str, 
-        width: float = 10.0, 
-        height: float = 10.0
+        width: float = imp_frac(1/4), 
+        height: float = imp_frac(1/4)
     ) -> App.DocumentObject:
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
     cuboid_stock = App.ActiveDocument.addObject("PartDesign::FeaturePython", "ref_obj")
@@ -27,7 +30,7 @@ def create_tube(
 
 def create_cylinder(
         obj_name: str,
-        diameter: float = 6.35
+        diameter: float = imp_frac(1/4)
     ) -> App.DocumentObject:
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
     tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","ref_obj")
