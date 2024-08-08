@@ -153,6 +153,12 @@ class HoleBoundGenerator():
 
         current_interval = Interval(profile_interval.start, 0.0)
         for intf_interval in  intf_intervals:
+
+            # if the interference is past the end of the internal profile, then
+            # skip it
+            if intf_interval.start >= self.af_inner_profile.BoundBox.XMax:
+                continue
+
             current_interval.end = intf_interval.start
             self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
             current_interval = Interval(intf_interval.end, 0.0)
@@ -347,6 +353,10 @@ class RoundedTrapezoidControlPoints():
 
         corner_pts: List[App.Vector] = airfoil.get_intersections(x_position, profile)
         
+        # print("------------------")
+        # print("range: " + str(profile.BoundBox.XMin) + " - " + str(profile.BoundBox.XMax))
+        # print("x_position=" + str(x_position))
+
         p1 = corner_pts[0]
         p2 = corner_pts[1]
 
