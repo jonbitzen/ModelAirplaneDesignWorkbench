@@ -353,10 +353,6 @@ class RoundedTrapezoidControlPoints():
 
         corner_pts: List[App.Vector] = airfoil.get_intersections(x_position, profile)
         
-        # print("------------------")
-        # print("range: " + str(profile.BoundBox.XMin) + " - " + str(profile.BoundBox.XMax))
-        # print("x_position=" + str(x_position))
-
         p1 = corner_pts[0]
         p2 = corner_pts[1]
 
