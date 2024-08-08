@@ -5,8 +5,7 @@ from BOPTools import BOPFeatures
 import FreeCAD as App
 import Part
 import Sketcher
-from typing import Tuple
-from typing import List
+from typing import List, Dict, Tuple
 
 def create(
     obj_name: str,
@@ -133,6 +132,11 @@ class Rib():
     def execute(self, obj: App.DocumentObject) -> None:
 
         with utilities.TempDocObjectHelper() as tmp_obj_helper:
+
+            intf_vis: Dict[str, bool] = {}
+            for intf in obj.interferences:
+                intf_vis[intf.Name] = intf.ViewObject.Visibility
+
             orig_placement: App.Placement = obj.Placement
 
             self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.airfoil))
@@ -285,6 +289,10 @@ class Rib():
                 obj.Shape = rib_final_extr.Shape.copy()
 
             obj.Placement = orig_placement
+
+            for intf in obj.interferences:
+                intf.ViewObject.Visibility = intf_vis[intf.Name]
+                # intf_vis[intf.Name] = obj.ViewObject.Visibility
 
 
 class RibViewProvider():
