@@ -83,6 +83,21 @@ class Rib():
             "Other solids that intersect the rib"
         ).interferences = []
 
+        obj.addProperty(
+            "App::PropertyLink",
+            "le_trim_line",
+            "Rib",
+            "Line reference used to trim the rib from the leading edge back toward the trailing edge"
+        ).le_trim_line = None
+
+        obj.addProperty(
+            "App::PropertyLink",
+            "te_trim_line",
+            "Rib",
+            "Line reference used to trim the rib from the trailing edge toward the leading edge"
+        ).te_trim_line = None
+
+        # TODO: These don't get copied when the object is copied
         self.Object = obj
         obj.Proxy = self
 
@@ -93,15 +108,19 @@ class Rib():
         objects that may be added explictly by the user
         """  
 
-        pass
-
-        # TODO: for some reason when I lave this in, we spew empty sketches
-        #       everywhere, sort that out
-        # match property:
-        #     case "airfoil" | "hole_type" | "interferences":
-        #         self.execute(obj)
-        #     case _:
-        #         pass
+        match property:
+            case "te_trim_line":
+                if obj.te_trim_line is None:
+                    obj.trim_te = 0.0
+                self.execute(obj)
+            case "le_trim_line":
+                if obj.le_trim_line is None:
+                    obj.trim_le = 0.0
+                self.execute(obj)
+            case "airfoil" | "hole_type" | "interferences":
+                    self.execute(obj)
+            case _:
+                pass
 
     def attach(self, obj: App.DocumentObject) -> None:
         pass
@@ -129,6 +148,54 @@ class Rib():
             
             return rib_ftr
 
+    def __get_te_distance(self, edges: List[Part.Edge], v_te: float, matrix: App.Matrix) -> float:
+
+        if not edges:
+            return None
+
+        v_0 = utilities.origin
+
+        v_te_rib = matrix.multVec(v_te)
+        v_0_rib = matrix.multVec(v_0)
+
+        plane_normal_xf = matrix.multVec(utilities.z_axis)
+        plane = Part.Plane(v_te_rib, plane_normal_xf)
+
+        p: App.Vector = None
+
+        # search the list of edges for the first point intersection with the rib plane
+        for edge in edges:
+            curve: Part.Curve = edge.Curve
+            trimmed_curve = curve.trim(curve.FirstParameter, curve.LastParameter)
+
+            intersections = plane.intersect(trimmed_curve)
+
+            for inter in intersections:
+                if not inter:
+                    continue
+
+                i = inter[0]
+                if type(i) is Part.Point:
+                    p = App.Vector(i.X, i.Y, i.Z)
+                break
+
+            if p is not None:
+                break
+
+        # if there was no intersection between the rib plane and the the reference
+        # line, then return an empty value
+        if p is None:
+            return None
+        
+        # if we get here, then we've got all we need to get the projected length
+        # from the reference line down on the rib
+        A: App.Vector = p - v_te_rib
+        B: App.Vector = v_0_rib - v_te_rib
+        
+        projection = A.dot(B)/B.Length
+
+        return projection
+
     def execute(self, obj: App.DocumentObject) -> None:
 
         with utilities.TempDocObjectHelper() as tmp_obj_helper:
@@ -145,12 +212,39 @@ class Rib():
             rib_sketch.Shape.tessellate(0.01)
             rib_sketch.recompute()
 
+            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
+
+            # TODO: make this a method somehow
+            v_te = App.Vector(rib_extr.Shape.BoundBox.XMax, 0, 0)
+            trim_le = 0.0
+            trim_te = 0.0
+            if obj.te_trim_line is not None:
+                ref_edges = obj.te_trim_line.Shape.Edges
+                te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
+                if te_distance < obj.chord and te_distance > 0:
+                    obj.trim_te = te_distance
+                    trim_te = te_distance
+                else:
+                    obj.trim_te = 0.0
+            else:
+                trim_te = obj.trim_te
+
+            if obj.le_trim_line is not None:
+                ref_edges = obj.le_trim_line.Shape.Edges
+                te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
+                if te_distance < obj.chord and te_distance > 0:
+                    obj.trim_le = obj.chord - te_distance
+                    trim_le = obj.chord - te_distance
+                else:
+                    obj.trim_le = 0.0
+            else:
+                trim_le = obj.trim_le
+
             # TODO: we only need to calculate interferences if the hole generator is
             #       valid, so we could skip all this in many cases
 
             # create an extruded rib form, we're going to use it to find common bool
             # shapes with the intersecting objects
-            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
             rib_extr.Placement = orig_placement
             rib_extr.recompute()
 
@@ -184,9 +278,6 @@ class Rib():
             # create trim boxes in the rib's body-centered coordinate space to
             # trim the rib some distance with respect to the leading edge and/or
             # trailing edge
-            trim_le: float = obj.trim_le
-            trim_te: float = obj.trim_te
-
             trim_le = trim_le if trim_le >= 0.0 else 0.0
             trim_te = trim_te if trim_te >= 0.0 else 0.0
             
