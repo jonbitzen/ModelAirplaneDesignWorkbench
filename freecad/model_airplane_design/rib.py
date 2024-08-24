@@ -3,24 +3,23 @@ from . import rib_hole_generators as rhg
 from . import utilities
 from BOPTools import BOPFeatures
 import FreeCAD as App
-import Part
+import Part, PartDesign
 import Sketcher
 from typing import List, Dict, Tuple
 
 def create(
-    obj_name: str,
+    obj_name: str
 ) -> App.DocumentObject:
-    obj: App.DocumentObject = App.ActiveDocument.addObject(
-        "Part::FeaturePython",
-        obj_name
-    )
+    
+    body: PartDesign.Body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
+    rib_feature = App.ActiveDocument.addObject("PartDesign::FeaturePython", obj_name + "_base")
 
-    Rib(obj)
-    RibViewProvider(obj.ViewObject)
+    Rib(rib_feature)
+    RibViewProvider(rib_feature.ViewObject)
 
-    App.ActiveDocument.recompute()
+    body.addObject(rib_feature)
 
-    return obj
+    return body
 
 class Rib():
     """
@@ -204,17 +203,23 @@ class Rib():
             for intf in obj.interferences:
                 intf_vis[intf.Name] = intf.ViewObject.Visibility
 
-            orig_placement: App.Placement = obj.Placement
+            bdy: PartDesign.Body = obj.getParent()
+
+            orig_placement: App.Placement = bdy.Placement
 
             self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.airfoil))
 
+            # create rib sketchin in the body local coord system (LCS)
             rib_sketch: Sketcher.SketchObject = tmp_obj_helper.addObject(self.airfoil_data.to_sketch(obj.chord), do_delete=True)
             rib_sketch.Shape.tessellate(0.01)
             rib_sketch.recompute()
 
+            # create body-centered solid in body LCS
             rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
 
             # TODO: make this a method somehow
+            # calculate trim distances to reference linesin the body world 
+            # coordinate system (WCS)
             v_te = App.Vector(rib_extr.Shape.BoundBox.XMax, 0, 0)
             trim_le = 0.0
             trim_te = 0.0
@@ -243,8 +248,8 @@ class Rib():
             # TODO: we only need to calculate interferences if the hole generator is
             #       valid, so we could skip all this in many cases
 
-            # create an extruded rib form, we're going to use it to find common bool
-            # shapes with the intersecting objects
+            # translate the rib solid from body LCS to body WCS so that we can
+            # find boolean intersection with the interferences
             rib_extr.Placement = orig_placement
             rib_extr.recompute()
 
@@ -256,6 +261,9 @@ class Rib():
             scale_factor: float = obj.chord / 175.0
             rib_pen_standoff: float = scale_factor * 2.0
             for interference in obj.interferences:
+
+                # find the intersection between the rib solid and the intersection
+                # in the body WCS
                 rib_intersection: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_common([rib_extr.Name, interference.Name]), do_delete=True)
                 rib_intersection.recompute()
 
@@ -268,6 +276,11 @@ class Rib():
                 if rib_intersection.Shape.Volume < utilities.epsilon:
                     continue
 
+                # the boolean intersection's *shape* coords are in world coords
+                # and its placement is at the origin; we apply the body inverse
+                # world transform to the boolean *shape* coordinates to get it
+                # back into the body LCS, so we can calculate interference
+                # intervals along the x axis for each; however after c
                 rib_i_ft: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Feature", "rib_i_ft"), do_delete=True)
                 rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
                 rib_i_ft.Placement.Matrix.move(rib_sketch.Shape.BoundBox.Center)
@@ -322,7 +335,7 @@ class Rib():
             rib_sketch.recompute()        
 
             # create a solid for the final rib shape, starting with the sketch that
-            # has the lightening holes in it
+            # has the lightening holes in it; this final shape is in the body LCS
             rib_final_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
             
             # make boolean trim cuts here before we change the rib transform
@@ -364,26 +377,25 @@ class Rib():
                 rib_final_extr.recompute()
 
 
-            # move the rib into its final transform space
-            rib_final_extr.Placement = orig_placement
-            rib_final_extr.recompute()
+            obj.Shape = rib_final_extr.Shape.copy()
 
-            # make cuts for each of the interferences in the rib solid
+            # move the rib into its final transform space
+            # TODO: we might not need to do this, since everything is in the
+            #       parent's coordinate space now, which ends up being what we
+            #       always wanted 
+            rib_final_extr.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix,True)
+
+            # make cuts for each of the interferences in the rib solid; note that
+            # after these cuts are made, the new final rib solid's *shape* is in
+            # world coordinates, and its placement is at the origin
             for interference in obj.interferences:
                 rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, interference.Name]), do_delete=True)
                 rib_final_extr.recompute()
 
-            # we only need to fix the shape transform if we had interferences
-            if len(obj.interferences) > 0:
-                obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
-            else:
-                obj.Shape = rib_final_extr.Shape.copy()
-
-            obj.Placement = orig_placement
+            obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
 
             for intf in obj.interferences:
                 intf.ViewObject.Visibility = intf_vis[intf.Name]
-                # intf_vis[intf.Name] = obj.ViewObject.Visibility
 
 
 class RibViewProvider():

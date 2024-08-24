@@ -3,6 +3,7 @@ from . import elevation_path
 from . import planform
 from . import rib
 import FreeCAD as App
+import PartDesign
 import math
 from typing import Tuple
 
@@ -119,7 +120,10 @@ class Wing():
             chord, ctr_pt = planform_helper.get_rib_chord_at(pose.position)
             ctr_pt.z = pose.position.z
 
-            r: rib.Rib = rib.create("rib"+str(idx))
+            rib_name = "rib"+str(idx)
+            rib_base_name = rib_name+"_base"
+            rib_body: PartDesign.Body = rib.create(rib_name)
+            r = rib_body.getObject(rib_base_name)
             r.chord = chord
 
             path_tan = pose.direction.normalize()
@@ -138,11 +142,11 @@ class Wing():
             )
 
             p.Base = ctr_pt
-            r.Placement = p
-            r.Placement.Base = ctr_pt
-            r.recompute()
-            rib_list.append(r)
-            obj.addObject(r)
+            rib_body.Placement = p
+            rib_body.Placement.Base = ctr_pt
+            rib_body.recompute()
+            rib_list.append(rib_body)
+            obj.addObject(rib_body)
             idx += 1
         obj.rib_list = rib_list
 
