@@ -205,6 +205,9 @@ class Rib():
 
             bdy: PartDesign.Body = obj.getParent()
 
+            if bdy is None:
+                return
+
             orig_placement: App.Placement = bdy.Placement
 
             self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.airfoil))
