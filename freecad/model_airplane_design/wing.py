@@ -5,7 +5,7 @@ from . import rib
 import FreeCAD as App
 import PartDesign
 import math
-from typing import Tuple
+from typing import List, Tuple
 
 def create(obj_name: str) -> App.DocumentObject:
 
@@ -104,8 +104,9 @@ class Wing():
         obj.Origin = App.ActiveDocument.addObject("App::Origin", "Origin")
 
     def rebuild_wing(self, obj: App.DocumentObject) -> None:
-        rib_list = obj.rib_list
+        rib_list: List[PartDesign.Body] = obj.rib_list
         for r in rib_list:
+            r.removeObjectsFromDocument()
             obj.removeObject(r)
             App.ActiveDocument.removeObject(r.Name)
         obj.rib_list = []
@@ -144,7 +145,7 @@ class Wing():
             p.Base = ctr_pt
             rib_body.Placement = p
             rib_body.Placement.Base = ctr_pt
-            rib_body.recompute()
+            rib_body.recompute(True)
             rib_list.append(rib_body)
             obj.addObject(rib_body)
             idx += 1
