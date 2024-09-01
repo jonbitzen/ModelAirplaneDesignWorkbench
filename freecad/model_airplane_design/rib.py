@@ -143,7 +143,11 @@ class Rib():
         and the target thickness property
         """
         with utilities.TempDocObjectHelper() as tmp_obj_helper:
-            rib_extr: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Extrusion", "rib_extr"), do_delete=True)
+            rib_extr: Part.Feature = \
+                tmp_obj_helper.addObject(
+                    App.ActiveDocument.addObject("Part::Extrusion", "rib_extr"), 
+                    do_delete=True
+                )
             rib_extr.Base = rib_sketch
             rib_extr.Dir = App.Vector(0, 0, thickness)
             rib_extr.Solid = True
@@ -153,7 +157,11 @@ class Rib():
             transform_mtx = App.Matrix()
             transform_mtx.move(-body_center)
             
-            rib_ftr: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Feature", "rib_ftr"), do_delete=True)
+            rib_ftr: Part.Feature = \
+                tmp_obj_helper.addObject(
+                    App.ActiveDocument.addObject("Part::Feature", "rib_ftr"), 
+                    do_delete=True
+                )
             rib_ftr.Shape = rib_extr.Shape.transformed(transform_mtx, copy=True)
             tmp_obj_helper.removeObject(rib_ftr)
             
@@ -178,54 +186,66 @@ class Rib():
             self,
             body: Part.Feature, 
             rib_bbox: App.BoundBox, 
-            trim_ref: Part.Feature) -> float:
+            trim_ref_in: Part.Feature) -> float:
         
-        if trim_ref is None:
-            return None
-        
-        edges: List[Part.Edge] = trim_ref.Shape.Edges
-        if not edges:
-            return None
+        with utilities.TempDocObjectHelper() as tmp_geo:
 
-        pt_te = App.Vector(rib_bbox.XMax, 0, 0)
-        pt_le = App.Vector(rib_bbox.XMin, 0, 0)
+            if trim_ref_in is None:
+                return None
+            
+            trim_ref = \
+                tmp_geo.addObject(
+                    make_copy_in_global_coords(trim_ref_in),
+                    do_delete=True
+                )
 
-        plane_normal = body.getGlobalPlacement().Matrix.multVec(utilities.z_axis)
-        plane = Part.Plane(pt_te, plane_normal)
+            edges: List[Part.Edge] = trim_ref.Shape.Edges
+            if not edges:
+                return None
 
-        pt_on_ref: App.Vector = None
-        for edge in edges:
-            curve: Part.Curve = edge.Curve
-            trimmed_curve = curve.trim(curve.FirstParameter, curve.LastParameter)
-            intersections = plane.intersect(trimmed_curve)
-            for intersection in intersections:
-                if not intersection:
-                    continue
+            pt_te = body.getGlobalPlacement().Matrix.multVec(App.Vector(rib_bbox.XMax, 0, 0))
+            pt_le = body.getGlobalPlacement().Matrix.multVec(App.Vector(rib_bbox.XMin, 0, 0))
 
-                i = intersection[0]
-                if type(i) is Part.Point:
-                    pt_on_ref = App.Vector(i.X, i.Y, i.Z)
+            plane_normal = body.getGlobalPlacement().Rotation.multVec(utilities.z_axis)
+            plane = \
+                Part.Plane(
+                    pt_te, 
+                    plane_normal
+                )
+            
+            pt_on_ref: App.Vector = None
+            for edge in edges:
+                curve: Part.Curve = edge.Curve
+                trimmed_curve = curve.trim(curve.FirstParameter, curve.LastParameter)
+                intersections = plane.intersect(trimmed_curve)
+                for intersection in intersections:
+                    if not intersection:
+                        continue
+
+                    i = intersection[0]
+                    if type(i) is Part.Point:
+                        pt_on_ref = App.Vector(i.X, i.Y, i.Z)
+                        break
+
+                if pt_on_ref is not None:
                     break
 
-            if pt_on_ref is not None:
-                break
+            if pt_on_ref is None:
+                return None
+            
+            A: App.Vector = pt_on_ref - pt_te
+            B: App.Vector = pt_le-pt_te
 
-        if pt_on_ref is None:
+            te_dist = A.dot(B)/B.Length
+            rib_chord = rib_bbox.XLength
+
+            # only return a value if the projected distance is positive, and if it
+            # is within the rib chord length; anything else indicates that the ref
+            # line was either in front the LE, or behind the TE
+            if te_dist < rib_chord and te_dist > 0:
+                return te_dist
+            
             return None
-        
-        A: App.Vector = pt_on_ref - body.getGlobalPlacement().Matrix.multVec(pt_te)
-        B: App.Vector = body.getGlobalPlacement().Matrix.multVec(pt_le-pt_te)
-
-        te_dist = A.dot(B)/B.Length
-        rib_chord = rib_bbox.XLength
-
-        # only return a value if the projected distance is positive, and if it
-        # is within the rib chord length; anything else indicates that the ref
-        # line was either in front the LE, or behind the TE
-        if te_dist < rib_chord and te_dist > 0:
-            return te_dist
-        
-        return None
 
 
     def execute(self, obj: App.DocumentObject) -> None:
