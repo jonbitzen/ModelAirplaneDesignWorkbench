@@ -21,6 +21,14 @@ def create(
 
     return body
 
+def make_copy_in_global_coords(feature: Part.Feature):
+        tmp_base: Part.Feature = App.ActiveDocument.addObject("Part::Feature", "tmp_base")
+        s = feature.Shape.copy()
+        s.Placement = utilities.xy_placement
+        tmp_base.Shape = s
+        tmp_base.Placement = feature.getGlobalPlacement()
+        return tmp_base
+
 class Rib():
     """
         Proxy class that handles wing rib generation logic on behalf of a 
@@ -117,7 +125,7 @@ class Rib():
                     obj.trim_le = 0.0
                 self.execute(obj)
             case "airfoil" | "hole_type" | "interferences":
-                    self.execute(obj)
+                self.execute(obj)
             case _:
                 pass
 
@@ -147,6 +155,8 @@ class Rib():
             
             return rib_ftr
 
+    # TODO: since all we need is a distance, I suspect this should all be done
+    #       in world coordinates
     def __get_te_distance(self, edges: List[Part.Edge], v_te: float, matrix: App.Matrix) -> float:
 
         if not edges:
@@ -181,7 +191,7 @@ class Rib():
             if p is not None:
                 break
 
-        # if there was no intersection between the rib plane and the the reference
+        # if there was no intersection between the rib plane and the reference
         # line, then return an empty value
         if p is None:
             return None
@@ -199,62 +209,68 @@ class Rib():
 
         with utilities.TempDocObjectHelper() as tmp_obj_helper:
 
-            intf_vis: Dict[str, bool] = {}
-            for intf in obj.interferences:
-                intf_vis[intf.Name] = intf.ViewObject.Visibility
-
+            # somehow we can get here before the rib feature is attached to the
+            # body, which causes this to be None
             bdy: PartDesign.Body = obj.getParent()
-
             if bdy is None:
                 return
 
+            # TODO: This may need to be the global placement, since I think
+            #       booleans may be in global space, while the body Placement
+            #       may be a local coordinate relative to a wing or other
+            #       assembly
             orig_placement: App.Placement = bdy.Placement
 
             self.airfoil_data = airfoil.load(airfoil.AirfoilType.to_filename(obj.airfoil))
 
-            # create rib sketchin in the body local coord system (LCS)
+            # create rib sketch in the body local coord system (LCS)
             rib_sketch: Sketcher.SketchObject = tmp_obj_helper.addObject(self.airfoil_data.to_sketch(obj.chord), do_delete=True)
             rib_sketch.Shape.tessellate(0.01)
             rib_sketch.recompute()
 
-            # create body-centered solid in body LCS
-            rib_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
+            # this is initially at the origin, it will be moved to the global
+            # coordinate system later
+            rib_intf_global = \
+                tmp_obj_helper.addObject(
+                    self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), 
+                    do_delete=True
+                )
 
-            # TODO: make this a method somehow
-            # calculate trim distances to reference linesin the body world 
-            # coordinate system (WCS)
-            v_te = App.Vector(rib_extr.Shape.BoundBox.XMax, 0, 0)
-            trim_le = 0.0
-            trim_te = 0.0
-            if obj.te_trim_line is not None:
-                ref_edges = obj.te_trim_line.Shape.Edges
-                te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
-                if te_distance < obj.chord and te_distance > 0:
-                    obj.trim_te = te_distance
-                    trim_te = te_distance
-                else:
-                    obj.trim_te = 0.0
-            else:
-                trim_te = obj.trim_te
+            # # TODO: make this a method somehow
+            # # calculate trim distances to reference lines in the body world 
+            # # coordinate system (WCS)
+            # v_te = App.Vector(rib_intf_global.Shape.BoundBox.XMax, 0, 0)
+            # trim_le = 0.0
+            # trim_te = 0.0
+            # if obj.te_trim_line is not None:
+            #     ref_edges = obj.te_trim_line.Shape.Edges
+            #     te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
+            #     if te_distance < obj.chord and te_distance > 0:
+            #         obj.trim_te = te_distance
+            #         trim_te = te_distance
+            #     else:
+            #         obj.trim_te = 0.0
+            # else:
+            #     trim_te = obj.trim_te
 
-            if obj.le_trim_line is not None:
-                ref_edges = obj.le_trim_line.Shape.Edges
-                te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
-                if te_distance < obj.chord and te_distance > 0:
-                    obj.trim_le = obj.chord - te_distance
-                    trim_le = obj.chord - te_distance
-                else:
-                    obj.trim_le = 0.0
-            else:
-                trim_le = obj.trim_le
+            # if obj.le_trim_line is not None:
+            #     ref_edges = obj.le_trim_line.Shape.Edges
+            #     te_distance = self.__get_te_distance(ref_edges, v_te, orig_placement.Matrix)
+            #     if te_distance < obj.chord and te_distance > 0:
+            #         obj.trim_le = obj.chord - te_distance
+            #         trim_le = obj.chord - te_distance
+            #     else:
+            #         obj.trim_le = 0.0
+            # else:
+            #     trim_le = obj.trim_le
 
             # TODO: we only need to calculate interferences if the hole generator is
             #       valid, so we could skip all this in many cases
 
             # translate the rib solid from body LCS to body WCS so that we can
             # find boolean intersection with the interferences
-            rib_extr.Placement = orig_placement
-            rib_extr.recompute()
+            rib_intf_global.Placement = bdy.getGlobalPlacement()
+            rib_intf_global.recompute()
 
             # create a set of hole exclusion regions by finding the common bool
             # between each of the intersecting objects and the rib and applying a
@@ -265,18 +281,26 @@ class Rib():
             rib_pen_standoff: float = scale_factor * 2.0
             for interference in obj.interferences:
 
+                intf_global = \
+                    tmp_obj_helper.addObject(
+                        make_copy_in_global_coords(interference),
+                        do_delete=True
+                    )
+
                 # find the intersection between the rib solid and the intersection
                 # in the body WCS
-                rib_intersection: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_common([rib_extr.Name, interference.Name]), do_delete=True)
+                rib_intersection: Part.Feature = \
+                    tmp_obj_helper.addObject(
+                        boolean_tool.make_common([rib_intf_global.Name, intf_global.Name]), 
+                        do_delete=True
+                    )
                 rib_intersection.recompute()
-
-                if rib_intersection.Shape.isNull():
-                    continue
 
                 # NOTE: for some reason isNull() sometimes returns False, even when
                 #       there is no possible intersection, but the shape volume is
                 #       at least zero so hopefully we can rely on that
-                if rib_intersection.Shape.Volume < utilities.epsilon:
+                if rib_intersection.Shape.isNull() or rib_intersection.Shape.Volume < utilities.epsilon:
+                    print("No intersection between " + bdy.Name + " and " + interference.Name)
                     continue
 
                 # the boolean intersection's *shape* coords are in world coords
@@ -284,8 +308,16 @@ class Rib():
                 # world transform to the boolean *shape* coordinates to get it
                 # back into the body LCS, so we can calculate interference
                 # intervals along the x axis for each; however after c
-                rib_i_ft: Part.Feature = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Feature", "rib_i_ft"), do_delete=True)
-                rib_i_ft.Shape = rib_intersection.Shape.transformed(rib_extr.Placement.Matrix.inverse(), copy=True)
+                rib_i_ft: Part.Feature = \
+                    tmp_obj_helper.addObject(
+                        App.ActiveDocument.addObject("Part::Feature", "rib_i_ft"), 
+                        do_delete=True
+                    )
+                rib_i_ft.Shape = \
+                    rib_intersection.Shape.transformed(
+                        bdy.getGlobalPlacement().Matrix.inverse(), 
+                        copy=True
+                    )
                 rib_i_ft.Placement.Matrix.move(rib_sketch.Shape.BoundBox.Center)
                 rib_i_ft.recompute()
 
@@ -294,29 +326,29 @@ class Rib():
             # create trim boxes in the rib's body-centered coordinate space to
             # trim the rib some distance with respect to the leading edge and/or
             # trailing edge
-            trim_le = trim_le if trim_le >= 0.0 else 0.0
-            trim_te = trim_te if trim_te >= 0.0 else 0.0
+            # trim_le = trim_le if trim_le >= 0.0 else 0.0
+            # trim_te = trim_te if trim_te >= 0.0 else 0.0
             
-            do_trim = False if (trim_te+trim_le) > 0.8 * obj.chord else True
+            # do_trim = False if (trim_te+trim_le) > 0.8 * obj.chord else True
 
-            le_trim_bbox: App.BoundBox = None
-            te_trim_bbox: App.BoundBox = None
-            if do_trim:
-                if trim_le > 0.0:
-                    le_trim_bbox = App.BoundBox()
-                    le_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMin
-                    le_trim_bbox.XMax = le_trim_bbox.XMin + trim_le
-                    le_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
-                    le_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
-                    hole_exclusions.append(rhg.HoleExclusion(le_trim_bbox, rib_pen_standoff))
+            # le_trim_bbox: App.BoundBox = None
+            # te_trim_bbox: App.BoundBox = None
+            # if do_trim:
+            #     if trim_le > 0.0:
+            #         le_trim_bbox = App.BoundBox()
+            #         le_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMin
+            #         le_trim_bbox.XMax = le_trim_bbox.XMin + trim_le
+            #         le_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
+            #         le_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
+            #         hole_exclusions.append(rhg.HoleExclusion(le_trim_bbox, rib_pen_standoff))
 
-                if trim_te > 0.0:
-                    te_trim_bbox = App.BoundBox()
-                    te_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMax - trim_te
-                    te_trim_bbox.XMax = rib_sketch.Shape.BoundBox.XMax
-                    te_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
-                    te_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
-                    hole_exclusions.append(rhg.HoleExclusion(te_trim_bbox, rib_pen_standoff))
+            #     if trim_te > 0.0:
+            #         te_trim_bbox = App.BoundBox()
+            #         te_trim_bbox.XMin = rib_sketch.Shape.BoundBox.XMax - trim_te
+            #         te_trim_bbox.XMax = rib_sketch.Shape.BoundBox.XMax
+            #         te_trim_bbox.YMax = rib_sketch.Shape.BoundBox.YMax + utilities.epsilon
+            #         te_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
+            #         hole_exclusions.append(rhg.HoleExclusion(te_trim_bbox, rib_pen_standoff))
 
             inner_profile_standoff: float = scale_factor * 2.0
             hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)
@@ -342,63 +374,75 @@ class Rib():
             rib_final_extr = tmp_obj_helper.addObject(self.__make_body_centered_rib_feature(rib_sketch, obj.thickness), do_delete=True)
             
             # make boolean trim cuts here before we change the rib transform
-            if le_trim_bbox is not None:
-                le_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "le_trim_tool"), do_delete=True)
-                # NOTE: we add margins to the tool size, and compensate with the
-                #       placement to ensure that the tool entirely covers the
-                #       airfoil extrusion, and doesn't leave slivers behind
-                le_trim_tool.Length = le_trim_bbox.XLength + 1
-                le_trim_tool.Width = le_trim_bbox.YLength + 2
-                le_trim_tool.Height = obj.thickness * 2
+            # if le_trim_bbox is not None:
+            #     le_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "le_trim_tool"), do_delete=True)
+            #     # NOTE: we add margins to the tool size, and compensate with the
+            #     #       placement to ensure that the tool entirely covers the
+            #     #       airfoil extrusion, and doesn't leave slivers behind
+            #     le_trim_tool.Length = le_trim_bbox.XLength + 1
+            #     le_trim_tool.Width = le_trim_bbox.YLength + 2
+            #     le_trim_tool.Height = obj.thickness * 2
                 
-                le_trim_tool.Placement.move(
-                    App.Vector(
-                        rib_final_extr.Shape.BoundBox.XMin - 1, 
-                        rib_final_extr.Shape.BoundBox.YMin - 1, 
-                        -0.5*obj.thickness
-                    )
-                )
-                le_trim_tool.recompute()
-                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, le_trim_tool.Name]), do_delete=True)
-                rib_final_extr.recompute()
+            #     le_trim_tool.Placement.move(
+            #         App.Vector(
+            #             rib_final_extr.Shape.BoundBox.XMin - 1, 
+            #             rib_final_extr.Shape.BoundBox.YMin - 1, 
+            #             -0.5*obj.thickness
+            #         )
+            #     )
+            #     le_trim_tool.recompute()
+            #     rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, le_trim_tool.Name]), do_delete=True)
+            #     rib_final_extr.recompute()
 
-            if te_trim_bbox is not None:
-                te_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "te_trim_tool"), do_delete=True)
-                te_trim_tool.Length = te_trim_bbox.XLength + 1
-                te_trim_tool.Width = te_trim_bbox.YLength + 2
-                te_trim_tool.Height = obj.thickness * 2
+            # if te_trim_bbox is not None:
+            #     te_trim_tool = tmp_obj_helper.addObject(App.ActiveDocument.addObject("Part::Box", "te_trim_tool"), do_delete=True)
+            #     te_trim_tool.Length = te_trim_bbox.XLength + 1
+            #     te_trim_tool.Width = te_trim_bbox.YLength + 2
+            #     te_trim_tool.Height = obj.thickness * 2
                 
-                te_trim_tool.Placement.move(
-                    App.Vector(
-                        rib_final_extr.Shape.BoundBox.XMax - trim_te, 
-                        rib_final_extr.Shape.BoundBox.YMin - 1, 
-                        -0.5*obj.thickness
-                    )
+            #     te_trim_tool.Placement.move(
+            #         App.Vector(
+            #             rib_final_extr.Shape.BoundBox.XMax - trim_te, 
+            #             rib_final_extr.Shape.BoundBox.YMin - 1, 
+            #             -0.5*obj.thickness
+            #         )
+            #     )
+            #     te_trim_tool.recompute()
+            #     rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, te_trim_tool.Name]), do_delete=True)
+            #     rib_final_extr.recompute()
+
+            # move the working shape from the body LCS into body's WCS, so we can 
+            # calculate make holes for the interferences; do it to the shape rather
+            # than the transform, so we only have one thing to undo if there was
+            # no interference calcuation
+            rib_final_extr.Shape = \
+                rib_final_extr.Shape.transformed(
+                    bdy.getGlobalPlacement().Matrix, 
+                    copy=True
                 )
-                te_trim_tool.recompute()
-                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, te_trim_tool.Name]), do_delete=True)
-                rib_final_extr.recompute()
-
-
-            obj.Shape = rib_final_extr.Shape.copy()
-
-            # move the rib into its final transform space
-            # TODO: we might not need to do this, since everything is in the
-            #       parent's coordinate space now, which ends up being what we
-            #       always wanted 
-            rib_final_extr.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix,True)
-
             # make cuts for each of the interferences in the rib solid; note that
             # after these cuts are made, the new final rib solid's *shape* is in
             # world coordinates, and its placement is at the origin
             for interference in obj.interferences:
-                rib_final_extr: Part.Feature = tmp_obj_helper.addObject(boolean_tool.make_cut([rib_final_extr.Name, interference.Name]), do_delete=True)
+
+                intf_global = \
+                    tmp_obj_helper.addObject(
+                        make_copy_in_global_coords(interference), 
+                        do_delete=True
+                    )
+
+                rib_final_extr: Part.Feature = \
+                    tmp_obj_helper.addObject(
+                        boolean_tool.make_cut([rib_final_extr.Name, intf_global.Name]), 
+                        do_delete=True
+                    )
                 rib_final_extr.recompute()
 
-            obj.Shape = rib_final_extr.Shape.transformed(orig_placement.Matrix.inverse(), True)
-
-            for intf in obj.interferences:
-                intf.ViewObject.Visibility = intf_vis[intf.Name]
+            obj.Shape = \
+                rib_final_extr.Shape.transformed(
+                    bdy.getGlobalPlacement().Matrix.inverse(), 
+                    copy=True
+                )
 
 
 class RibViewProvider():
