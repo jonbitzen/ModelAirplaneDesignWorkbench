@@ -160,35 +160,42 @@ def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> 
     obj.Label = obj_name
     return obj
 
-def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
+def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0, name="point") -> Part.Feature:
     p_t = Part.Point(point)
-    p_t = Part.show(p_t.toShape())
+    p_t = Part.show(p_t.toShape(), name)
     p_t.ViewObject.PointColor = color
     p_t.ViewObject.PointSize = point_size
     return p_t
 
-def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
-    p_t = Part.show(point.toShape())
+def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.0, name="point") -> Part.Feature:
+    p_t = Part.show(point.toShape(), name)
     p_t.ViewObject.PointColor = color
     p_t.ViewObject.PointSize = point_size
     return p_t
 
-def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5)) -> List[Draft.Point]:
+def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5), name="point") -> List[Draft.Point]:
     drawn_pts: List[Draft.Point] = []
     for pt in pts:
-        pf = draw_point(pt, point_size=point_size, color=color)
+        pf = draw_point(pt, point_size=point_size, color=color, name=name)
         drawn_pts.append(pf)
     return drawn_pts
 
-def draw_point(pt: App.Vector, point_size=10.0, color: tuple = GREEN(0.5)) -> Draft.Point:
-    pf = Draft.make_point(pt)
+def draw_point(pt: App.Vector, point_size=10.0, color: tuple = GREEN(0.5), name="point") -> Draft.Point:
+    pf = Draft.make_point(pt, name)
     pf.ViewObject.PointColor = color
     pf.ViewObject.PointSize = point_size
     return pf
 
-def draw_line(start: App.Vector, dir: App.Vector, line_len=1.0) -> Part.Feature:
+def draw_line(start: App.Vector, dir: App.Vector, line_len=1.0, color: tuple = GREEN(0.5), name="line") -> Part.Feature:
     norm_dir = dir.normalize()
     pl = Part.makeLine(start, start+line_len*norm_dir)
-    pl = Part.show(pl)
+    pl = Part.show(pl, name)
+    pl.ViewObject.LineColor = color
+    return pl
+
+def draw_line_segment(start: App.Vector, end: App.Vector, color: tuple = GREEN(0.5), name="line_segment") -> Part.Feature:
+    pl = Part.makeLine(start, end)
+    pl = Part.show(pl, name)
+    pl.ViewObject.LineColor = color
     return pl
     
