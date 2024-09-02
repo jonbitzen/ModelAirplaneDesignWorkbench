@@ -95,7 +95,14 @@ class HoleBoundRegion():
             raise ValueError("Hole bound interval must not be None")
 
         self.af_inner_contour = af_inner_contour
-        self.interval = interval        
+        self.interval = interval     
+
+    def __str__(self) -> str:
+        ret_val: str = ""
+        ret_val += "contour=" + str(self.af_inner_contour) + ", "
+        ret_val += "interval=" + str(self.interval)
+        return ret_val
+
 
 # TODO: rename to HoleIntervalGenerator, since it is a region for one or more
 #       holes
@@ -144,26 +151,63 @@ class HoleBoundGenerator():
         intf_intervals: List[Interval] = [excl.get_excluded_interval() for excl in self.excluded_regions]
         intf_intervals.sort()
 
-        # first, calculate the nominal max hole width; this will be used to calculate
-        # the number of holes in each of the space intervals between interferences
+        # merge the excluded intervals
+        mgd_intf_intervals: List[Interval] = []
+        if intf_intervals:
+            mgd_intf_intervals.append(intf_intervals[0])
+
+            for idx in range(1, len(intf_intervals)):
+                last = mgd_intf_intervals[-1]
+                curr = intf_intervals[idx]
+
+                if curr.start <= last.end:
+                    last.end = max(last.end, curr.end)
+                else:
+                    mgd_intf_intervals.append(curr)
+
+        # correct the list of excluded intervals so that any interval completely
+        # outside the inner profile is discarded, and that the coordinates are
+        # clamped to the maximum extents of the inner profile
         inner_profile_bbox = self.af_inner_profile.BoundBox
-    
-        profile_interval = Interval(inner_profile_bbox.XMin, inner_profile_bbox.XMax)
-        self.hole_intervals: List[HoleBoundRegion] = []
-
-        current_interval = Interval(profile_interval.start, 0.0)
-        for intf_interval in  intf_intervals:
-
-            # if the interference is past the end of the internal profile, then
-            # skip it
-            if intf_interval.start >= self.af_inner_profile.BoundBox.XMax:
+        intf_intervals.clear()
+        for interval in mgd_intf_intervals:
+            # if an exclusion's interval ends before the start of the inner
+            # profile, we can discard it
+            if interval.end <= inner_profile_bbox.XMin:
                 continue
 
-            current_interval.end = intf_interval.start
+            # if an exclusion's interval ends after the start of the inner
+            # profile, discard it
+            if interval.start >= inner_profile_bbox.XMax:
+                continue
+
+            # if an exclusion's interval starts before the start of the inner
+            # profile, set it's start to Xmin before adding to the list
+            if interval.start < inner_profile_bbox.XMin:
+                interval.start = inner_profile_bbox.XMin
+
+            # if an exclusions interval ends after the inner profile, set it to
+            # Xmax before adding to the list
+            if interval.end > inner_profile_bbox.XMax:
+                interval.end = inner_profile_bbox.XMax
+            
+            intf_intervals.append(interval)
+
+        # now find a list of intervals where we are allowed to make holes
+        self.hole_intervals: List[HoleBoundRegion] = []
+        current_interval = Interval(inner_profile_bbox.XMin, None)
+        for intf_interval in intf_intervals:
+            if current_interval.start < intf_interval.start:
+                current_interval.end = intf_interval.start
+                self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
+                current_interval = Interval(intf_interval.end, None)
+            else:
+                current_interval = Interval(intf_interval.end, None)
+
+        # if current interval isn't closed, then close it and add it to the list
+        if current_interval.end is None:
+            current_interval.end = inner_profile_bbox.XMax
             self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
-            current_interval = Interval(intf_interval.end, 0.0)
-        current_interval.end = profile_interval.end
-        self.hole_intervals.append(HoleBoundRegion(self.af_inner_profile, current_interval))
 
     def get_hole_bounds(self) -> List[HoleBoundRegion]:
         """
