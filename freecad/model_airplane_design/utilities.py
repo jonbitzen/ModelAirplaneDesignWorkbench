@@ -120,6 +120,10 @@ def save_feature_asset(doc_obj: Part.Feature) -> None:
     doc_obj: Part.Feature
         The document object to store as an asset in the plugin resources/assets
         folder.  Will be saved with a filename of the form "${doc_obj.Name}.asset"
+
+    Return
+    ------
+    None
     """
     filename = doc_obj.Name + ".asset"
     filepath = os.path.join(ASSETPATH, filename)
@@ -147,6 +151,11 @@ def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> 
         Rename the DocumentObject "Name" and "Label" field to use the user-provided
         name; if not specified the "asset_name" variable value will be used
         instead 
+
+    Return
+    ------
+    Part.Feature
+        A document object deserialized from a disk asset file
     """
     if obj_name is None:
         obj_name = asset_name
@@ -160,35 +169,166 @@ def load_feature_asset(asset_name: str, obj_type: str, obj_name: str = None) -> 
     obj.Label = obj_name
     return obj
 
-def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
+def makePointV(point: App.Vector, color: tuple = BLACK(), point_size: float = 5.0, name="point") -> Part.Point:
+    """
+        Make a document object Point feature from a vector
+
+        Parameters
+        ----------
+        point: App.Vector
+            A vectors whose coordinates will be used to initialze a document 
+            object point
+        color: Tuple[float]
+            A tuple of three floats with range from 0.0 to 1.0 that provide a
+            color
+        point_size: float (BLACK), optional
+            Size of the document object point
+        name: str ("point"), optional
+            Name of the document object
+
+        Return
+        ------
+        Part.Point
+            A point feature document object
+    """
     p_t = Part.Point(point)
-    p_t = Part.show(p_t.toShape())
+    p_t = Part.show(p_t.toShape(), name)
     p_t.ViewObject.PointColor = color
     p_t.ViewObject.PointSize = point_size
     return p_t
 
-def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.0) -> Part.Feature:
-    p_t = Part.show(point.toShape())
+def makePointP(point: Part.Point, color: tuple = BLACK(), point_size: float = 5.0, name="point") -> Part.Feature:
+    """
+    Make a document object Point feature object from a Part.Point
+
+    Parameters
+    ----------
+    point: Part.Point
+        Location where the document object feature will appear
+    color: Tuple[float]
+        A tuple of three floats with range from 0.0 to 1.0 that provide a
+        color
+    point_size: float (BLACK), optional
+        Size of the document object point
+    name: str ("point"), optional
+        Name of the document object
+    
+    Return
+    ------
+    Part.Point
+        A point feature document object
+    """
+    p_t = Part.show(point.toShape(), name)
     p_t.ViewObject.PointColor = color
     p_t.ViewObject.PointSize = point_size
     return p_t
 
-def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5)) -> List[Draft.Point]:
+# TODO: we should make the arg order consistent wherever this and makePointP is
+#       used
+def draw_points(pts: List[App.Vector], point_size=10.0, color: tuple = GREEN(0.5), name="point") -> List[Draft.Point]:
+    """
+    Draw a set of document object Point features from a list of vectors
+
+    Parameters
+    ----------
+    pts: List[App.Vector]
+        List of vectors that will be used to locate the drawn points
+    point_size: float
+        Size of the points to be drawn
+    color: Tuple[float]
+        A tuple of three floats with range from 0.0 to 1.0 that provide a
+        color
+    name: str ("point"), optional
+        Base name of the Point document object to be created
+
+    Return
+    ------
+    List[Draft.Point]
+    """
     drawn_pts: List[Draft.Point] = []
     for pt in pts:
-        pf = draw_point(pt, point_size=point_size, color=color)
+        pf = draw_point(pt, point_size=point_size, color=color, name=name)
         drawn_pts.append(pf)
     return drawn_pts
 
-def draw_point(pt: App.Vector, point_size=10.0, color: tuple = GREEN(0.5)) -> Draft.Point:
-    pf = Draft.make_point(pt)
+def draw_point(pt: App.Vector, point_size=10.0, color: tuple = GREEN(0.5), name="point") -> Draft.Point:
+    """
+    Draw a document object Point feature from a vector
+
+    Parameters
+    ----------
+    pt: App.Vector
+        A vector that will be used to locate the drawn point
+    point_size: float
+        Size of the points to be drawn
+    color: Tuple[float]
+        A tuple of three floats with range from 0.0 to 1.0 that provide a
+        color
+    name: str ("point"), optional
+        Base name of the Point document object to be created
+
+    Return
+    ------
+    Draft.Point
+    """
+    pf = Draft.make_point(pt, name)
     pf.ViewObject.PointColor = color
     pf.ViewObject.PointSize = point_size
     return pf
 
-def draw_line(start: App.Vector, dir: App.Vector, line_len=1.0) -> Part.Feature:
+def draw_line(start: App.Vector, dir: App.Vector, line_len=1.0, color: tuple = GREEN(0.5), name="line") -> Part.Feature:
+    """
+    Draw a document object line in a direction from a starting point
+
+    Parameters
+    ----------
+    start: App.Vector
+        Starting point for the line
+    dir: App.Vector
+        Direction for the line
+    line_len: float, optional
+        length of the line
+    color: Tuple[float], optional
+        A tuple of three floats with range from 0.0 to 1.0 that provide a
+        color
+    name: str ("line"), optional
+        Base name of the Line document object to be created
+
+    Return
+    ------
+    Part.Feature
+        line wrapped in a Part.Feature
+
+    """
     norm_dir = dir.normalize()
     pl = Part.makeLine(start, start+line_len*norm_dir)
-    pl = Part.show(pl)
+    pl = Part.show(pl, name)
+    pl.ViewObject.LineColor = color
+    return pl
+
+def draw_line_segment(start: App.Vector, end: App.Vector, color: tuple = GREEN(0.5), name="line_segment") -> Part.Feature:
+    """
+    Draws a line segment from the start to ending locations
+
+    Parameters
+    ----------
+    start: App.Vector
+        Starting point for the line
+    end: App.Vector
+        Ending point for the line
+    color: Tuple[float], optional
+        A tuple of three floats with range from 0.0 to 1.0 that provide a
+        color
+    name: str ("line_segment"), optional
+        Base name of the Line document object to be created
+
+    Return
+    ------
+    Part.Feature
+        line wrapped in a Part.Feature
+    """
+    pl = Part.makeLine(start, end)
+    pl = Part.show(pl, name)
+    pl.ViewObject.LineColor = color
     return pl
     

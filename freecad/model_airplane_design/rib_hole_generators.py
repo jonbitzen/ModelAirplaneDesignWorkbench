@@ -176,7 +176,7 @@ class HoleBoundGenerator():
             if interval.end <= inner_profile_bbox.XMin:
                 continue
 
-            # if an exclusion's interval ends after the start of the inner
+            # if an exclusion's interval starts after the end of the inner
             # profile, discard it
             if interval.start >= inner_profile_bbox.XMax:
                 continue
