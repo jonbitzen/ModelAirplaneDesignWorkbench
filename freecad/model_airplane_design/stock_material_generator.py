@@ -11,8 +11,25 @@ def create_cuboid(
         width: float = imp_frac(1/4), 
         height: float = imp_frac(1/4)
     ) -> App.DocumentObject:
+    """
+        Creates a cuboid stock object
+
+        Parameters
+        ----------
+        obj_name: str
+            name for the new object
+        width: float
+            width for the new object
+        height: float
+            height for the new object
+
+        Return
+        ------
+        PartDesign.Body
+            A body whose first feature is a cuboid solid
+    """
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
-    cuboid_stock = App.ActiveDocument.addObject("PartDesign::FeaturePython", "ref_obj")
+    cuboid_stock = App.ActiveDocument.addObject("PartDesign::FeaturePython", "cuboid_base")
     StockCuboid(cuboid_stock, width, height)
     StockCuboidViewProvider(cuboid_stock.ViewObject)
     body.addObject(cuboid_stock)
@@ -22,8 +39,23 @@ def create_tube(
         outer_diameter: float = 5.0,
         inner_diameter: float = 3.0
         ) -> App.DocumentObject:
+    """
+        Creates a tube stock object 
+
+        Parameters
+        ----------
+        outer_diameter: float
+            tube outer diameter
+        inner_diameter: float
+            tube inner diameter
+
+        Return
+        ------
+        PartDesign.Body
+            A body whose first feature is a tubular solid
+    """
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
-    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","reb_obj")
+    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","tube_base")
     StockTube(tube, outer_diameter, inner_diameter)
     StockTubeViewProvider(tube.ViewObject)
     body.addObject(tube)
@@ -32,8 +64,21 @@ def create_cylinder(
         obj_name: str,
         diameter: float = imp_frac(1/4)
     ) -> App.DocumentObject:
+    """
+        Creates a cylindrical stock object
+
+        Parameters
+        ----------
+        diameter: float
+            cylinder diameter
+
+        Return
+        ------
+        PartDesign.Body
+            A body whose first feature is a cylindrical solid
+    """
     body = App.ActiveDocument.addObject("PartDesign::Body", obj_name)
-    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","ref_obj")
+    tube = App.ActiveDocument.addObject("PartDesign::FeaturePython","cylinder_base")
     StockCylinder(tube, diameter)
     StockCylinderViewProvider(tube.ViewObject)
     body.addObject(tube)
