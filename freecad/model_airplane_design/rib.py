@@ -393,14 +393,13 @@ class Rib():
             # Calculate lightening holes for each hole bound region, and add the
             # geometry to the rib sketch 
             hbg = rhg.HoleGeneratorFactory.create_generator(obj.hole_type, obj.chord)
-            if hbg is not None:
-                for hbr in hbr_list:
-                    lh_sk = tmp_obj_helper.addObject(hbg.generate_sketch(hbr), do_delete=True)
-                    lh_sk.recompute()
-                    if lh_sk.Shape.isNull() or not lh_sk.Shape.isClosed():
-                        print("lightening hole sketch geometry is either null, or is not closed, skipping")
-                        continue
-                    rib_sketch.addGeometry(lh_sk.Geometry)
+            for hbr in hbr_list:
+                lh_sk = tmp_obj_helper.addObject(hbg.generate_sketch(hbr), do_delete=True)
+                lh_sk.recompute()
+                if lh_sk.Shape.isNull() or not lh_sk.Shape.isClosed():
+                    print("lightening hole sketch geometry is either null, or is not closed, skipping")
+                    continue
+                rib_sketch.addGeometry(lh_sk.Geometry)
                     
             rib_sketch.recompute()        
 

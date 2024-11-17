@@ -1,8 +1,8 @@
+from __future__ import annotations
 from . import utilities
 from . import airfoil
 from abc import ABC, abstractmethod
 import Draft
-import DraftGeomUtils
 from enum import Enum
 import FreeCAD as App
 import math
@@ -33,8 +33,14 @@ class Interval():
     def __str__(self):
         return "start=" + str(self.start) + ", end=" + str(self.end)
     
-    def __lt__(self, other: 'Interval'):
+    def __lt__(self, other: Interval):
         return self.start < other.start
+    
+    def __eq__(self, value: Interval) -> bool:
+        return self.start == value.start and self.end == value.end
+
+    def contains(self, value: Interval) -> bool:
+        return value.start >= self.start and value.end <= self.end
 
 class HoleExclusion():
     """
@@ -102,6 +108,12 @@ class HoleBoundRegion():
         ret_val += "contour=" + str(self.af_inner_contour) + ", "
         ret_val += "interval=" + str(self.interval)
         return ret_val
+    
+    def __eq__(self, value: HoleBoundRegion) -> bool:
+        return self.interval == value.interval
+    
+    def contains(self, other: HoleBoundRegion) -> bool:
+        return self.interval.contains(other.interval)
 
 
 # TODO: rename to HoleIntervalGenerator, since it is a region for one or more
@@ -732,13 +744,22 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
             tmp_obj_helper.removeObject(sk)
 
         return sk
-    
+
+class NullHoleGenerator(HoleGenerator):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def generate_sketch(self, bdg_region: HoleBoundRegion) -> Sketcher.Sketch:
+        sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
+        sk.Placement = utilities.xy_placement
+        return sk
+
 class HoleGeneratorFactory():
     @staticmethod
     def create_generator(generator_type: str, chord_param: float) -> HoleGenerator:
         match generator_type:
             case HoleGeneratorType.NONE.name:
-                return None
+                return NullHoleGenerator()
             case HoleGeneratorType.ROUNDED_TRAPEZOID.name:
                 scale_factor = chord_param/175.0
                 chamfer_rad: float = scale_factor*2.0
