@@ -364,7 +364,7 @@ class Rib():
             trim_le = trim_le if trim_le >= 0.0 else 0.0
             trim_te = trim_te if trim_te >= 0.0 else 0.0
             
-            do_trim = False if (trim_te+trim_le) > 0.8 * obj.chord else True
+            do_trim = False if (trim_te+trim_le) > 0.95 * obj.chord else True
 
             le_trim_bbox: App.BoundBox = None
             te_trim_bbox: App.BoundBox = None
