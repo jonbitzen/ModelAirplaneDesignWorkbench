@@ -91,6 +91,7 @@ class AirfoilType(Enum):
     NACA654221 = 4
     AIRCO_DH1 = 5
     AIRCO_DH1_THICK_TE = 6
+    AIRCO_DH1_CORRECTED = 7
 
     @classmethod
     def to_filename(self, airfoil_type: str) -> str:
@@ -122,6 +123,8 @@ class AirfoilType(Enum):
                 return "~/Documents/airfoil-data/airco-dh1.dat" 
             case AirfoilType.AIRCO_DH1_THICK_TE.name:
                 return "~/Documents/airfoil-data/airco-dh1-thick-TE.dat"
+            case AirfoilType.AIRCO_DH1_CORRECTED.name:
+                return "~/Documents/airfoil-data/airco-dh1-corrected.dat"
             case _:
                 print("AirfoilType.to_filename - unknown airfoil type \"" + airfoil_type + "\"")
                 return None
@@ -162,7 +165,6 @@ class AirfoilData:
         self.name = name
         self.filename = filename
         self.type =type
-        self.master_sketch = self.__to_master_sketch()
 
     def to_shape(self, chord: float, body_centered: bool=False) -> Part.Shape:
         """
@@ -186,17 +188,17 @@ class AirfoilData:
             directed chord length
 
         """
-        scale_factor = chord / self.master_sketch.Shape.BoundBox.XLength
-        scaled_af_shape = self.master_sketch.Shape.copy()
-        scaled_af_shape.scale(scale_factor)
-
+        af_sketch: Sketcher.Sketch
+        bbox: App.BoundBox
+        af_sketch, bbox = self.__to_master_sketch(chord)
+        af_shape = af_sketch.Shape.copy()
         if body_centered:
-            body_center = scaled_af_shape.BoundBox.Center
+            body_center = bbox.Center
             transform_mtx = App.Matrix()
             transform_mtx.move(-body_center)
-            scaled_af_shape = scaled_af_shape.transformed(transform_mtx, True)
+            af_shape = af_shape.transformed(transform_mtx, True)
 
-        return scaled_af_shape
+        return af_shape
 
 
     def to_sketch(self, chord: float, body_centered: bool=False) -> Sketcher.Sketch:
@@ -222,7 +224,7 @@ class AirfoilData:
         scaled_af_shape = self.to_shape(chord, body_centered)
         return Draft.make_sketch(scaled_af_shape, autoconstraints=True, name=self.name+"-sketch")
 
-    def __to_master_sketch(self, trailing_edge_type=TrailingEdgeType.LINE) -> Sketcher.Sketch:
+    def __to_master_sketch(self, chord: float, trailing_edge_type=TrailingEdgeType.LINE) -> Sketcher.Sketch:
         """
         Generate a fully-constrained sketch from the internally held Lednicer-type 
         coordinates.  The airfoil edges derived from the coordinates will be
@@ -250,19 +252,31 @@ class AirfoilData:
 
         """
         af_sk = Sketcher.Sketch()
-        
+
+        coords: List[App.Vector] = []
+        bbox = App.BoundBox()
+        bbox.XMin = 0.0; bbox.XMax = chord
+        bbox.ZMin = 0.0; bbox.ZMax = 0.0
+        bbox.YMin = 0.0; bbox.YMin = 0.0
+        for coord in self.coords:
+            scaled_coord = chord*coord
+            coords.append(scaled_coord)
+            bbox.YMin = min(bbox.YMin, scaled_coord.y)
+            bbox.YMax = max(bbox.YMax, scaled_coord.y)
+
         bsp = Part.BSplineCurve()
-        bsp.interpolate(self.coords)
+        
+        bsp.interpolate(coords)
         constraints: List[Sketcher.Constraint] = []
         bsp_id = af_sk.addGeometry(bsp)
         constraints.append(Sketcher.Constraint("Block", bsp_id))
 
         # if the start and end point aren't coincident, then we need to close the
         # edge loop
-        if self.coords[0] != self.coords[-1]:
+        if coords[0] != coords[-1]:
             # get the start and end point of the line
-            p1 = self.coords[-1]
-            p2 = self.coords[0]
+            p1 = coords[-1]
+            p2 = coords[0]
             match trailing_edge_type:
                 case TrailingEdgeType.LINE:
                     line = Part.LineSegment(p1, p2)
@@ -315,7 +329,7 @@ class AirfoilData:
 
         af_sk.addConstraint(constraints)
 
-        return af_sk
+        return af_sk, bbox
 
 def load(filename: str) -> AirfoilData:
     """
@@ -418,10 +432,13 @@ def save(
         Sketch that contains airfoil coordinates in Selig arrangement, which entails
         the following on the part of the modeler:
         - the airfoil chord is normalized to have a length of 1 along the x axis
-        - the airfoil leading edge is at coordinate 0 along the x axis; it should
-          be a single point where the leading edge is tangent to the y axis
-        - the airfoil traling edge is at coordinate 1 along the x axi; it may be
-          either a single point, or two points
+        - the airfoil leading edge is at the sketch origin point; it should be a
+          single point where the leading edge is tangent to the y axis at the
+          origin
+        - the airfoil trailing edge is at coordinate (1,0) along the x axis; it 
+          may be either a single point, or two points.  If the trailinge edge is
+          two points, they should be centered on a vertical line passing through
+          (1,0)
         - the remaining points should be x-coordinate sections that intersect
           the upper and lower surface exactly once at the same x coordinate
         - the airfoil upper surface y coordinates should be "up" (upper surface
