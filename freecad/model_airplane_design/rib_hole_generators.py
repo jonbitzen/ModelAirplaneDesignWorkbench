@@ -454,7 +454,27 @@ class HoleGenerator(ABC):
     """
     Interface for classes that will draw lightening holes inside a wing rib
     """
+    PROPERTY_CATEGORY = "Hole Properties"
     def generate_sketch(self, interval: HoleBoundRegion) -> Sketcher.Sketch:
+        pass
+
+    @staticmethod
+    def add_property(obj: App.DocumentObject, prop_type: str, prop_name: str, prop_doc: str):
+        obj.addProperty(
+            prop_type,
+            prop_name,
+            HoleGenerator.PROPERTY_CATEGORY,
+            prop_doc
+        )
+
+    @staticmethod
+    @abstractmethod
+    def add_properties(obj: App.DocumentObject) -> None:
+        pass
+    
+    @staticmethod
+    @abstractmethod
+    def remove_properties(obj: App.DocumentObject) -> None:
         pass
 
 class RoundedTrapezoidHoleGenerator(HoleGenerator):
@@ -473,6 +493,9 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
     min_hole_spacing: float
         minumum material that separates each generated hole in the HoleBoundingRegion
     """
+    CHAMFER_RADIUS = "chamfer_radius"
+    MAX_HOLE_WIDTH = "max_hole_width"
+    MIN_HOLE_SPACING = "min_hole_spacing"
     def __init__(
             self,
             max_chamfer_rad: float,
@@ -484,6 +507,33 @@ class RoundedTrapezoidHoleGenerator(HoleGenerator):
         self.max_chamfer_rad = max_chamfer_rad
         self.max_hole_length = max_hole_length
         self.min_hole_spacing = min_hole_spacing
+
+    @staticmethod
+    def add_properties(obj: App.DocumentObject) -> None:
+        HoleGenerator.add_property(
+            obj,
+            "App::PropertyFloat",
+            RoundedTrapezoidHoleGenerator.CHAMFER_RADIUS,
+            "Hole chamfer radius"
+        )
+        HoleGenerator.add_property(
+            obj,
+            "App::PropertyFloat",
+            RoundedTrapezoidHoleGenerator.MAX_HOLE_WIDTH,
+            "Maximum width of any hole"
+        )
+        HoleGenerator.add_property(
+            obj,
+            "App::PropertyFloat",
+            RoundedTrapezoidHoleGenerator.MAX_HOLE_WIDTH,
+            "Maximum width of any hole"
+        )
+
+    @staticmethod
+    def remove_properties(obj) -> None:
+        obj.removeProperty(RoundedTrapezoidHoleGenerator.CHAMFER_RADIUS)
+        obj.removeProperty(RoundedTrapezoidHoleGenerator.MAX_HOLE_WIDTH)
+        obj.removeProperty(RoundedTrapezoidHoleGenerator.MIN_HOLE_SPACING)
 
     def generate_sketch(self, bdg_region: HoleBoundRegion) -> Sketcher.Sketch:
         """
@@ -753,8 +803,18 @@ class NullHoleGenerator(HoleGenerator):
         sk: Sketcher.Sketch = App.ActiveDocument.addObject("Sketcher::SketchObject", "lightening-holes")
         sk.Placement = utilities.xy_placement
         return sk
+    
+    @staticmethod
+    def add_properties(obj: App.DocumentObject) -> None:
+        pass
+    
+    @staticmethod
+    def remove_properties(obj: App.DocumentObject) -> None:
+        pass
 
 class HoleGeneratorFactory():
+    # maybe we just hand in the whole doc object, and let the generator scrape
+    # the parameters needed for each of these, including the chord
     @staticmethod
     def create_generator(generator_type: str, chord_param: float) -> HoleGenerator:
         match generator_type:
@@ -769,3 +829,26 @@ class HoleGeneratorFactory():
             case _:
                 print("HoleGeneratorFactory.create_generator: unknown generator")
                 return None
+            
+    @staticmethod
+    def add_properties(generator_type: str, obj: App.DocumentObject) -> None:
+        match generator_type:
+            case HoleGeneratorType.NONE.name:
+                NullHoleGenerator.add_properties(obj)
+            case HoleGeneratorType.ROUNDED_TRAPEZOID.name:
+                RoundedTrapezoidHoleGenerator.add_properties(obj)
+            case _:
+                print("HoleGeneratorFactory.add_properties: unknown generator")
+                return None
+            
+    @staticmethod
+    def remove_properties(generator_type: str, obj: App.DocumentObject) -> None:
+        match generator_type:
+            case HoleGeneratorType.NONE.name:
+                NullHoleGenerator.remove_properties(obj)
+            case HoleGeneratorType.ROUNDED_TRAPEZOID.name:
+                RoundedTrapezoidHoleGenerator.remove_properties(obj)
+            case _:
+                print("HoleGeneratorFactory.remove_properties: unknown generator")
+                return None
+            

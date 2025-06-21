@@ -82,6 +82,7 @@ class Rib():
             "Rib",
             "Lightening hole type"
         ).hole_type = [e.name for e in rhg.HoleGeneratorType]
+        rhg.HoleGeneratorFactory.add_properties(obj.getPropertyByName("hole_type"), obj)
 
         obj.addProperty(
             "App::PropertyLinkList",
@@ -108,6 +109,13 @@ class Rib():
         self.Object = obj
         obj.Proxy = self
 
+    def onBeforeChange(self, obj: App.DocumentObject, property: str) -> None:
+        match property:
+            case "hole_type":
+                rhg.HoleGeneratorFactory.remove_properties(obj.getPropertyByName(property), obj)
+            case _:
+                pass
+
     def onChanged(self, obj: App.DocumentObject, property: str) -> None:
         """
         Called when the FeaturePython object properties change.  Note that this
@@ -116,6 +124,8 @@ class Rib():
         """  
 
         match property:
+            case "hole_type":
+                rhg.HoleGeneratorFactory.add_properties(obj.getPropertyByName(property), obj)
             case "te_trim_line":
                 if obj.te_trim_line is None:
                     obj.trim_te = 0.0
@@ -385,6 +395,7 @@ class Rib():
                     te_trim_bbox.YMin = rib_sketch.Shape.BoundBox.YMin - utilities.epsilon
                     hole_exclusions.append(rhg.HoleExclusion(te_trim_bbox, rib_pen_standoff))
 
+            # TODO: this ought to be part of each of the hole bound generators
             inner_profile_standoff: float = scale_factor * 2.0
             hbg =rhg.HoleBoundGenerator(rib_sketch, inner_profile_standoff, hole_exclusions)
 
