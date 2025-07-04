@@ -25,6 +25,15 @@ class AirfoilInfo:
     def __init__(self, library_path: Path, coord_filename: Path):
         self.library_path = library_path
         self.coord_filename = coord_filename
+    
+    def filename(self) -> Path:
+        return self.coord_filename
+    
+    def filepath(self) -> Path:
+        return self.library_path/self.coord_filename
+    
+    def name(self) -> str:
+        return self.coord_filename.stem
 
 class DbInfoFileKeys:
     NAME = "name"
@@ -51,8 +60,10 @@ class LibraryInfo:
             self.data_folder = self.lib_root_folder
 
         af_files = self.data_folder.glob("*.dat")
-        self.data_files = [af_file.name for af_file in af_files]
-
+        self.airfoil_info_list: List[AirfoilInfo] = []
+        for af_file in af_files:
+            ai = AirfoilInfo(self.data_folder, af_file)
+            self.airfoil_info_list.append(ai)
     
     def __load_dbinfo(self, db_info: Dict[str,str]) -> Tuple[str,str,str,Path]:
         name = db_info.get(DbInfoFileKeys.NAME, "Path Library")
@@ -61,6 +72,20 @@ class LibraryInfo:
         db_rel_path = Path(db_info.get(DbInfoFileKeys.DATA_REL_PATH, ""))
         return name, source, date, db_rel_path
     
+    def get_airfoil_info(self, airfoil_name: str) -> AirfoilInfo:
+        filtered_afs = self.get_airfoil_info(self, airfoil_name)
+        if len(filtered_afs) == 0:
+            print("Couldnt find an airfoil named \""+airfoil_name+"\" in library \""+self.name+"\"")
+            return None
+        if len(filtered_afs) > 1:
+            print("Found multiple potential matches in library \""+self.name+"\" for requested airfoil \""+airfoil_name+"\"")
+            return None
+        return filtered_afs[0]
+
+    def get_airfoil_matches(self, airfoil_name: str) -> List[AirfoilInfo]:
+        filtered_afs = [af_info for af_info in self.airfoil_info_list if airfoil_name in af_info.name()]
+        return filtered_afs
+
     def get_name(self) -> str:
         return self.name
     
@@ -91,15 +116,15 @@ class AirfoilLibrary:
     def get_search_paths(self) -> List[Path]:
         return [lib.lib_root_folder for lib in self.lib_list]
 
-    def get_airfoil_matches(self, search_key: str) -> List[Path]:
-        filtered_afs: List[Path] = []
+    def get_airfoil_matches(self, search_key: str) -> List[AirfoilInfo]:
+        filtered_afs: List[AirfoilInfo] = []
         for lib in self.lib_list:
-            filtered_afs = list(filter(lambda af_file: search_key in af_file, lib.data_files))
+            filtered_afs = lib.get_airfoil_matches(search_key)
             if filtered_afs:
                 break
         return filtered_afs
 
-    def get_airfoil_data(self, airfoil_filepath: Path) -> AirfoilInfo:
+    def get_airfoil_data(self, airfoil_name: str) -> AirfoilInfo:
         pass
 
 
