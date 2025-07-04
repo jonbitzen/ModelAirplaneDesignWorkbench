@@ -5,10 +5,13 @@ import FreeCAD as App
 import numpy
 import os.path
 import Part
+import json
 from pathlib import Path
 import Sketcher
-from typing import List
+from typing import List, Dict, Tuple
 from . import utilities
+
+from freecad.model_airplane_design import AIRFOIL_DB_PATH
 
 class FileType(Enum):
     SELIG = 1
@@ -17,6 +20,87 @@ class FileType(Enum):
 class TrailingEdgeType(Enum):
     LINE = 1
     ROUNDED = 2
+
+class AirfoilInfo:
+    def __init__(self, library_path: Path, coord_filename: Path):
+        self.library_path = library_path
+        self.coord_filename = coord_filename
+
+class DbInfoFileKeys:
+    NAME = "name"
+    SOURCE = "source"
+    DATE = "date"
+    AIRFOIL_DESC_FILE = "airfoil_desc_file"
+    DATA_REL_PATH = "data_rel_path"
+
+class LibraryInfo:
+    def __init__(self, lib_root_folder: Path):
+        self.lib_root_folder = Path(lib_root_folder)
+        
+        db_info_filepath = self.lib_root_folder / Path("db-info.json")
+        if db_info_filepath.exists():
+            try:
+                content = db_info_filepath.read_text(encoding="utf-8")
+                db_info: Dict[str,str] = json.loads(content)
+                self.name, self.source, self.date, db_rel_path = self.__load_dbinfo(db_info)
+                self.data_folder = self.lib_root_folder / db_rel_path
+            except json.JSONDecodeError:
+                print("LibraryInfo: couldn't decode json file \""+str(db_info_filepath+"\""))
+        else:
+            self.name, self.source, self.date, _ = self.__load_dbinfo({})
+            self.data_folder = self.lib_root_folder
+
+        af_files = self.data_folder.glob("*.dat")
+        self.data_files = [af_file.name for af_file in af_files]
+
+    
+    def __load_dbinfo(self, db_info: Dict[str,str]) -> Tuple[str,str,str,Path]:
+        name = db_info.get(DbInfoFileKeys.NAME, "Path Library")
+        source = db_info.get(DbInfoFileKeys.SOURCE, "Unknown")
+        date = db_info.get(DbInfoFileKeys.DATE, "Unknown")
+        db_rel_path = Path(db_info.get(DbInfoFileKeys.DATA_REL_PATH, ""))
+        return name, source, date, db_rel_path
+    
+    def get_name(self) -> str:
+        return self.name
+    
+    def get_source(self) -> str:
+        return self.source
+    
+    def get_date(self) -> str:
+        return self.date
+    
+    def get_data_folder(self) -> Path:
+        return self.data_folder
+    
+
+class AirfoilLibrary:
+
+    def __init__(self, lib_paths: List[Path] = [AIRFOIL_DB_PATH]):
+        self.lib_list: List[LibraryInfo] = []
+        for lib_path in lib_paths:
+            self.lib_list.append(LibraryInfo(lib_path))
+
+    def add_library(self, lib_path: Path) -> None:
+        self.lib_list.insert(0, LibraryInfo(lib_path))
+
+    def remove_library(self, lib_path: Path) -> None:
+        filtered_libs_iterator = filter(lambda lib: lib.lib_root_folder != lib_path, self.lib_list)
+        self.lib_list = list(filtered_libs_iterator)
+
+    def get_search_paths(self) -> List[Path]:
+        return [lib.lib_root_folder for lib in self.lib_list]
+
+    def get_airfoil_matches(self, search_key: str) -> List[Path]:
+        filtered_afs: List[Path] = []
+        for lib in self.lib_list:
+            filtered_afs = list(filter(lambda af_file: search_key in af_file, lib.data_files))
+            if filtered_afs:
+                break
+        return filtered_afs
+
+    def get_airfoil_data(self, airfoil_filepath: Path) -> AirfoilInfo:
+        pass
 
 
 def get_intersections_with_curve(x_position: float, curve):

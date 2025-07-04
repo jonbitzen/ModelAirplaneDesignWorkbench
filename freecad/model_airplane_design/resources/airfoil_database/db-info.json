@@ -1,1 +1,7 @@
-
+{
+    "name": "UIUC Airfoil Database",
+    "source": "https://m-selig.ae.illinois.edu/ads/coord_database.html",
+    "date": "2024.11.17",
+    "airfoil_desc_file": "airfoil-info.json",
+    "data_rel_path": "data"
+}
