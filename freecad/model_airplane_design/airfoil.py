@@ -119,12 +119,11 @@ class AirfoilLibrary:
     def get_airfoil_matches(self, search_key: str) -> List[AirfoilInfo]:
         filtered_afs: List[AirfoilInfo] = []
         for lib in self.lib_list:
-            filtered_afs = lib.get_airfoil_matches(search_key)
-            # TODO: We need to merge rather than just break; so if we get a hit
-            # on goe173 in an early search, other paths ought to be able to
-            # return other "goe" airfoils
-            if filtered_afs:
-                break
+            af_list = lib.get_airfoil_matches(search_key)
+            for af in af_list:
+                if any(af_in_list == af.name() for af_in_list in filtered_afs):
+                    continue
+                filtered_afs.append(af)
         return filtered_afs
 
     def get_airfoil_data(self, airfoil_name: str) -> AirfoilInfo:
